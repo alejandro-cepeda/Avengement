@@ -1,41 +1,265 @@
 <!doctype html>
-<p>No settings yet — placeholder for future options (AI, sound, etc.).</p>
-</section>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Avengement — Prototype</title>
+<style>
+  /* Main menu styles (simple, self-contained) */
+  :root{
+    --accent:#ff6b6b;
+    --bg1:#071019;
+    --bg2:#0b2b3a;
+    --panel:#0f1720;
+    --glass: rgba(255,255,255,0.04);
+    --muted: #9aa8b3;
+  }
+  html,body{height:100%;margin:0;font-family:Inter,Segoe UI,Roboto,system-ui,-apple-system,Segoe UI Emoji;}
+  .app-wrap{min-height:100%;display:flex;flex-direction:column;background:linear-gradient(180deg,var(--bg1),var(--bg2));color:#e6eef3;}
+  header.app-header{display:flex;align-items:center;justify-content:space-between;padding:18px 28px;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);backdrop-filter:blur(2px)}
+  .logo{display:flex;gap:12px;align-items:center;font-weight:700;letter-spacing:1px}
+  .logo .mark{width:48px;height:48px;border-radius:8px;background:linear-gradient(135deg,#ff8a64,#ff6b6b);display:flex;align-items:center;justify-content:center;font-weight:800;color:#081019}
+  main{flex:1;padding:28px;display:flex;align-items:center;justify-content:center;gap:24px;position:relative}
+  /* Main menu card */
+  .main-menu{
+    width:980px;max-width:96vw;background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));border-radius:12px;padding:28px;display:flex;gap:20px;align-items:stretch;box-shadow:0 10px 30px rgba(3,6,12,0.6);
+  }
+  .menu-left{flex:1;display:flex;flex-direction:column;gap:12px}
+  .game-title{font-size:50px;margin:6px 0;color:#b3b3b3;text-shadow:0 6px 18px rgba(1, 8, 48, 0.6)}
+  .game-sub{color:var(--muted);margin-bottom:12px}
+  .menu-actions{display:flex;flex-direction:column;gap:12px;margin-top:8px}
+  .btn{
+    background:var(--panel);border:1px solid rgba(255,255,255,0.04);color:#eaf6ff;padding:12px 18px;border-radius:10px;font-weight:700;cursor:pointer;text-align:left;transition:transform .12s ease,box-shadow .12s ease;
+    box-shadow:0 6px 18px rgba(3,6,12,0.45);
+  }
+  .btn:hover{transform:translateY(-4px);box-shadow:0 14px 30px rgba(3,6,12,0.6)}
+  .btn.secondary{background:transparent;border:1px dashed rgba(255,255,255,0.04);color:var(--muted);font-weight:600}
+  .menu-right{width:360px;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center}
+  .preview{
+    width:100%;height:220px;background:linear-gradient(135deg,rgba(255,107,107,0.08),rgba(255,139,100,0.04));border-radius:10px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.5);font-size:14px;border:1px solid rgba(255,255,255,0.03)
+  }
+  .muted{color:var(--muted);font-size:13px}
+  footer.footer{padding:12px 18px;text-align:center;color:var(--muted);font-size:13px}
+  /* Screen visibility helper */
+  .screen{display:none}
+  .screen.active{display:block}
+  /* Keep existing game layout from the original file intact */
+
+  a {
+    text-decoration: none;
+    color: inherit;
+  }
+
+    /* Help / Instructions styling */
+    .help-card{
+      background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));
+      border-radius:12px;padding:20px;color:#eaf6ff;box-shadow:0 10px 30px rgba(2,8,18,0.6);max-width:900px;margin:0 auto;
+    }
+    .help-title{font-size:20px;margin-bottom:8px;font-weight:800;color:#ffd166}
+    .help-sub{color:var(--muted);margin-bottom:14px}
+    .help-sections{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+    .help-section{background:rgba(255,255,255,0.02);padding:12px;border-radius:8px;min-height:120px}
+    .help-section h4{margin:0 0 8px 0;color:#ffb84d}
+    .help-list{margin:0;padding-left:18px;color:var(--muted);line-height:1.45}
+    .help-legend{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+    .sigil{display:inline-flex;align-items:center;gap:8px;font-weight:700}
+    .sigil .icon{width:28px;height:20px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:12px}
+    .sigil .ally{background:var(--ally);color:#041019}
+    .sigil .enemy{background:var(--enemy);color:#041019}
+    .sigil .boss{background:var(--boss);color:#041019}
+    .help-quick{margin-top:12px;color:var(--muted);font-size:13px}
+    .back-row{display:flex;justify-content:flex-end;margin-top:12px;gap:8px}
+    .btn.small{padding:8px 12px;border-radius:8px}
+  </style>
+</head>
+<body>
+<div class="app-wrap">
 
 
-<section id="screen-help" class="screen card">
-<h2>Help & Instructions</h2>
-<div id="helpContent"></div>
-</section>
+
+  <main>
+    <!-- Main Menu Card -->
+    <section id="screen-mainmenu" class="main-menu">
+      <div class="menu-left">
+        <div>
+          <div class="game-title">Avengement</div>
+          <div class="game-sub">Turn-based tactical PvP / PvE — local two-player demo</div>
+        </div>
+
+        <div class="menu-actions">
+          <a href ="game.html"  class="btn">
+          Start Game
+          </a>
+          <button id="helpBtn" class="btn">Help & Instructions</button>
+          <button id="aboutBtn" class="btn">About</button>
+        </div>
+
+        <div style="margin-top:10px" class="muted">Avengement stems from a game mechanic in the game.</div>
+      </div>
+
+      <aside class="menu-right">
+        <div class="preview">Preview / artwork placeholder</div>
+        <div style="width:100%;display:flex;gap:8px;margin-top:8px;justify-content:center">
+          <div class="muted">Version: 0.1</div>
+          <div class="muted">Player: Local</div>
+        </div>
+      </aside>
+    </section>
+
+    <!-- Keep existing screens (settings/help/about/game) — made visible by the small inline script below -->
+    <!-- Settings screen -->
+    <section id="screen-settings" class="screen card">
+      <h2>Settings</h2>
+      <p>No settings yet — placeholder for future options (AI, sound, etc.).</p>
+    </section>
 
 
-<section id="screen-about" class="screen card">
-<h2>About</h2>
-<p>Avengement — classroom prototype. Built with vanilla HTML/CSS/JS. Host on Live Server, Glitch, or GitHub Pages.</p>
-</section>
+    <!-- Help screen -->
+    <section id="screen-help" class="screen card">
+      <div class="help-card">
+        <div class="help-title">Avengement — Rules & Instructions</div>
+        <div class="help-sub">A compact fantasy skirmish. Two players take turns moving their forces to attack each other and outmaneuvering the dragon.</div>
+
+        <div class="help-sections">
+          <div class="help-section">
+            <h4>1. Theme & Goal</h4>
+            <p class="help-list">Each player commands three champions. The central Dragon (boss) roams the field.</p>
+          </div>
+
+          <div class="help-section">
+            <h4>2. Setup</h4>
+            <ul class="help-list">
+              <li>Board: 7×7 grid.</li>
+              <li>Allies start along the top row; Enemies start along the bottom row.</li>
+              <li>Dragon begins at the center with 20 HP.</li>
+              <li>Each player has an AP pool (starts at 3, max 6).</li>
+            </ul>
+          </div>
+
+          <div class="help-section">
+            <h4>3. Turn Structure</h4>
+            <ul class="help-list">
+              <li>Players take turns. On your turn you may move any of your pieces while you have AP.</li>
+              <li>Each move (to any adjacent square, including diagonals) costs 1 AP.</li>
+              <li>Click "End Turn" when finished — the turn does not end automatically.</li>
+              <li>Unmoved friendly pieces refund 1 AP back into your pool when you press End Turn (pool capped at 6).</li>
+            </ul>
+          </div>
+
+          <div class="help-section">
+            <h4>4. Movement & Combat</h4>
+            <ul class="help-list">
+              <li>Movement: 8-directional adjacency allowed (N, S, E, W and diagonals).</li>
+              <li>There is no direct attack in this demo; interactions can be expanded later.</li>
+              <li>Dragon movement is triggered by rolling a die at end of each turn.</li>
+            </ul>
+          </div>
+
+          <div class="help-section">
+            <h4>5. The Dragon</h4>
+            <ul class="help-list">
+              <li>At the end of each turn a 1–6 roll occurs.</li>
+              <li>Roll 1: Dragon attempts to move 3 squares up. 2: right. 3: left. 4: down. 5–6: no move.</li>
+              <li>If the Dragon would land on a unit, it attempts to redirect that unit to an adjacent free cell. If no free space exists the Dragon stops.</li>
+              <li>Dragon has an HP bar (20). Future versions may let pieces damage the dragon.</li>
+            </ul>
+          </div>
+
+          <div class="help-section">
+            <h4>6. Quick Reference</h4>
+            <div class="help-legend">
+              <div class="sigil"><span class="icon ally">A</span> Ally piece — controlled by Player 1</div>
+              <div class="sigil"><span class="icon enemy">E</span> Enemy piece — controlled by Player 2</div>
+              <div class="sigil"><span class="icon boss">🐉</span> Dragon — boss (HP displayed)</div>
+            </div>
+            <div class="help-quick">AP caps at 6. Use End Turn to bank AP from unmoved units. Move costs 1 AP per adjacent step (including diagonals).</div>
+          </div>
+        </div>
+
+        <div class="back-row">
+          <button class="btn small back-to-menu">Back</button>
+        </div>
+      </div>
+    </section>
 
 
-<section id="screen-game" class="screen card">
-<div class="game-wrap">
-<canvas id="gameCanvas" width="560" height="560"></canvas>
-<aside class="panel">
-<div class="panel-card">
-<h3>Game Panel</h3>
-<div id="turnIndicator">Current: Player 1</div>
-<div class="small-gap"></div>
-<div id="apHpInfo">AP: 3 | HP: 0</div>
-<div class="small-gap"></div>
-<button id="resetBtn">Reset Board</button>
+    <!-- About screen -->
+    <section id="screen-about" class="screen card">
+      <h2>About</h2>
+      <p>Avengement — classroom prototype. Built with vanilla HTML/CSS/JS. Host on Live Server, Glitch, or GitHub Pages.</p>
+    </section>
+
+
+    <!-- Game screen (kept as in original) -->
+    <section id="screen-game" class="screen card">
+      <div class="game-wrap">
+        <canvas id="gameCanvas" width="560" height="560"></canvas>
+        <aside class="panel">
+          <div class="panel-card">
+            <h3>Game Panel</h3>
+            <div id="turnIndicator">Current: Player 1</div>
+            <div class="small-gap"></div>
+            <div id="apHpInfo">AP: 3 | HP: 0</div>
+            <div class="small-gap"></div>
+            <button id="resetBtn">Reset Board</button>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer">Template — Avengement</footer>
 </div>
-</aside>
-</div>
-</section>
-</main>
 
+<script>
+  // Minimal menu-to-screen wiring that preserves the existing core scripts below.
+  (function(){
+    const showScreen = id => {
+      // hide main menu and all screens, then show target
+      document.querySelectorAll('.screen, #screen-mainmenu').forEach(s => s.classList.remove('active'));
+      const target = document.getElementById(id);
+      if (target) target.classList.add('active');
+    };
 
-<footer class="footer">Template — Avengement</footer>
-</div>
+    // initial state: show main menu
+    document.getElementById('screen-mainmenu').classList.add('active');
 
+    // buttons
+    const mapping = {
+      startBtn: 'screen-game',
+      navStart: 'screen-game',
+      settingsBtn: 'screen-settings',
+      navSettings: 'screen-settings',
+      helpBtn: 'screen-help',
+      aboutBtn: 'screen-about',
+      loadBtn: 'screen-game' // fallback: jump to game
+    };
+
+    Object.keys(mapping).forEach(btnId => {
+      const el = document.getElementById(btnId);
+      if (!el) return;
+      el.addEventListener('click', e => {
+        e.preventDefault();
+        showScreen(mapping[btnId]);
+      });
+    });
+
+    // allow in-game back to menu if needed (delegated)
+    document.addEventListener('click', e => {
+      if (!e.target) return;
+      if (e.target.matches('.back-to-menu')) {
+        showScreen('screen-mainmenu');
+      }
+    });
+
+    // quick keyboard shortcuts: M = menu, G = game
+    document.addEventListener('keydown', e => {
+      if (e.key.toLowerCase() === 'm') showScreen('screen-mainmenu');
+      if (e.key.toLowerCase() === 'g') showScreen('screen-game');
+    });
+  })();
+</script>
 
 <!-- Core scripts (vanilla, non-module) -->
 <script src="scripts/game/utils.js"></script>
@@ -46,12 +270,10 @@
 <script src="scripts/game/boardState.js"></script>
 <script src="scripts/game/gameManager.js"></script>
 
-
 <script src="scripts/ui/menu.js"></script>
 <script src="scripts/ui/settings.js"></script>
 <script src="scripts/ui/help.js"></script>
 <script src="scripts/ui/boardUI.js"></script>
-
 
 <script src="scripts/main.js"></script>
 </body>

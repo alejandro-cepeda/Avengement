@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Avengement — Play</title>
+<style>
+  :root{--bg:#071019;--cell:#0f1720;--grid-gap:6px;--ally:#66d9ff;--enemy:#ff9b6b;--boss:#ffd166;--muted:#9aa8b3;--turn-ally:#66d9ff;--turn-enemy:#ff9b6b}
+  html,body{height:100%;margin:0;font-family:Inter,Segoe UI,Roboto,system-ui,-apple-system,Segoe UI Emoji;background:linear-gradient(180deg,var(--bg),#05202a);color:#e6eef3;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:18px}
+  header{width:100%;max-width:980px;display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  header h1{font-size:20px;margin:0}
+  .controls{display:flex;gap:8px;align-items:center}
+  button{background:#0b2330;border:1px solid rgba(255,255,255,0.04);color:#eaf6ff;padding:8px 12px;border-radius:8px;cursor:pointer}
+  main{display:flex;gap:18px;align-items:flex-start}
+  /* Board */
+  .board {
+    display:grid;
+    grid-template-columns:repeat(7,64px);
+    grid-template-rows:repeat(7,64px);
+    gap:var(--grid-gap);
+    padding:12px;
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border-radius:12px;
+    box-shadow:0 8px 28px rgba(0,0,0,0.6);
+  }
+  .cell{
+    width:64px;height:64px;background:var(--cell);border-radius:8px;display:flex;align-items:center;justify-content:center;position:relative;user-select:none;
+    transition:box-shadow .12s ease,transform .08s ease;
+  }
+  .cell:hover{transform:translateY(-3px)}
+  .cell.highlight{box-shadow:0 8px 20px rgba(0,0,0,0.6), 0 0 0 3px rgba(102,217,255,0.06)}
+  .cell.occupied{cursor:pointer}
+  .piece{
+    width:44px;height:44px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#041019;box-shadow:0 6px 18px rgba(0,0,0,0.6);transition:transform .12s ease;
+  }
+  .piece.ally{background:var(--ally)}
+  .piece.enemy{background:var(--enemy)}
+  .piece.boss{background:var(--boss);width:56px;height:56px;border-radius:8px;font-size:18px}
+  .piece.playable{box-shadow:0 8px 28px rgba(102,217,255,0.14);transform:translateY(-2px)}
+  .selected{outline:3px solid rgba(255,255,255,0.06);transform:translateY(-6px)}
+  /* side panel */
+  .panel{width:260px;max-width:30vw;color:var(--muted);display:flex;flex-direction:column;gap:8px}
+  .panel .log{background:rgba(255,255,255,0.02);padding:12px;border-radius:8px;min-height:120px;overflow:auto}
+  .muted{color:var(--muted);font-size:13px;margin-top:8px}
+  .turnIndicator{padding:8px;border-radius:8px;background:rgba(255,255,255,0.02);display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .turnPill{padding:6px 10px;border-radius:999px;font-weight:700;color:#041019}
+  .turnPill.ally{background:var(--turn-ally)}
+  .turnPill.enemy{background:var(--turn-enemy)}
+  .apDisplay{font-weight:700}
+  @media (max-width:900px){
+    .board{transform:scale(.9)}
+  }
+
+  /* Roll overlay */
+  .roll-overlay{
+    position:fixed;left:0;top:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;
+    background:rgba(2,8,18,0.65);backdrop-filter:blur(4px);z-index:60;
+  }
+  .roll-card{
+    background:linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01));
+    padding:22px 28px;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,0.7);text-align:center;color:#eaf6ff;
+    min-width:220px;
+  }
+  .roll-value{font-size:46px;font-weight:900;margin:8px 0;color:#fff}
+  .roll-title{font-size:13px;color:var(--muted)}
+  .roll-sub{font-size:12px;color:var(--muted);margin-top:8px}
+
+  /* Boss HP bar */
+  .hpContainer{margin-top:8px}
+  .hpLabel{font-size:12px;color:var(--muted);margin-bottom:6px}
+  .hpBar{width:100%;height:10px;background:rgba(255,255,255,0.04);border-radius:6px;overflow:hidden}
+  .hpFill{height:100%;background:linear-gradient(90deg,#ffd166,#ffb84d);width:100%;transition:width .28s ease}
+  .hpText{font-size:12px;color:var(--muted);margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Avengement — 7x7 Demo</h1>
+  <div class="controls">
+    <button id="btnReset">Reset</button>
+    <button id="btnBack">Back to Menu</button>
+  </div>
+</header>
+
+<main>
+  <div id="board" class="board" aria-label="Game board" tabindex="0"></div>
+
+  <aside class="panel">
+    <div class="turnIndicator">
+      <div>
+        <div style="font-size:13px;color:var(--muted)">Turn</div>
+        <div id="turnLabel" style="font-weight:700">Player</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+        <div id="turnPill" class="turnPill ally">ALLY</div>
+        <div class="apDisplay" id="apDisplay">AP: 3</div>
+      </div>
+    </div>
+
+    <!-- Boss HP -->
+    <div id="bossHealth" class="hpContainer" aria-hidden="false">
+      <div class="hpLabel">Dragon HP</div>
+      <div class="hpBar" role="progressbar" aria-valuemin="0" aria-valuemax="20" aria-valuenow="20">
+        <div id="hpFill" class="hpFill" style="width:100%"></div>
+      </div>
+      <div id="hpText" class="hpText">20 / 20</div>
+    </div>
+
+    <div style="display:flex;gap:8px">
+      <button id="btnEndTurn">End Turn</button>
+    </div>
+
+    <div class="log" id="log"></div>
+    <div class="muted">Click a piece to select it. Each move costs 1 AP. You may move as long as you have AP. Unmoved pieces return AP when you press End Turn. Max AP pool is 6.</div>
+  </aside>
+</main>
+
+<!-- roll overlay (hidden until roll occurs) -->
+<div id="rollOverlay" class="roll-overlay" style="display:none">
+  <div class="roll-card" id="rollCard" role="dialog" aria-modal="true">
+    <div class="roll-title" id="rollTitle">Turn ended — roll</div>
+    <div class="roll-value" id="rollValue">4</div>
+    <div class="roll-sub">Click anywhere to continue</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const ROWS = 7, COLS = 7;
+  const MAX_AP_POOL = 6;
+  const boardEl = document.getElementById('board');
+  const logEl = document.getElementById('log');
+  const btnReset = document.getElementById('btnReset');
+  const btnBack = document.getElementById('btnBack');
+  const btnEndTurn = document.getElementById('btnEndTurn');
+  const turnPill = document.getElementById('turnPill');
+  const turnLabel = document.getElementById('turnLabel');
+  const apDisplay = document.getElementById('apDisplay');
+  const rollOverlay = document.getElementById('rollOverlay');
+  const rollValueEl = document.getElementById('rollValue');
+  const rollTitleEl = document.getElementById('rollTitle');
+
+  // model: 2D array of null or piece ids
+  let grid = [];
+  let pieces = {}; // id => piece
+  let selectedId = null;
+  let currentPlayer = 'ally'; // 'ally' or 'enemy'
+  let rollPending = false;
+  let lastRoll = null;
+
+  // persistent AP pools for each player
+  const apPool = { ally: 3, enemy: 3 };
+  // working AP this turn
+  let apRemaining = 3;
+  // track which pieces this player moved during the current turn
+  let movedThisTurn = new Set();
+
+  function emptyGrid(){
+    grid = Array.from({length:ROWS}, ()=> Array.from({length:COLS}, ()=> null));
+    pieces = {};
+    selectedId = null;
+    movedThisTurn.clear();
+  }
+
+  // pick `count` unique random columns (0..COLS-1)
+  function randUniqueCols(count){
+    const cols = new Set();
+    while(cols.size < count){
+      cols.add(Math.floor(Math.random()*COLS));
+    }
+    return Array.from(cols);
+  }
+
+  // place 3 allies in the first row (row 0) at randomized columns,
+  // 3 enemies in the last row (row ROWS-1) at randomized columns,
+  // and a single larger boss in the center cell.
+  function placeInitialPieces(){
+    emptyGrid();
+
+    // allies on first row (row 0)
+    const topCols = randUniqueCols(3);
+    topCols.forEach((c,i)=>{
+      const r = 0;
+      const id = 'A' + i;
+      const piece = {id, r, c, type:'ally'};
+      grid[r][c] = id;
+      pieces[id] = piece;
+    });
+
+    // enemies on last row (row ROWS-1)
+    const bottomCols = randUniqueCols(3);
+    bottomCols.forEach((c,i)=>{
+      const r = ROWS - 1;
+      const id = 'E' + i;
+      const piece = {id, r, c, type:'enemy'};
+      grid[r][c] = id;
+      pieces[id] = piece;
+    });
+
+    // place boss (dragon) in center (floor(ROWS/2), floor(COLS/2))
+    const midR = Math.floor(ROWS/2), midC = Math.floor(COLS/2);
+    const bossId = 'B0';
+    const boss = {id:bossId, r:midR, c:midC, type:'boss', name:'Dragon'};
+    grid[midR][midC] = bossId;
+    pieces[bossId] = boss;
+
+    // start with allies
+    currentPlayer = 'ally';
+    // reset ap pools & working AP (ensure within cap)
+    apPool.ally = Math.min(MAX_AP_POOL, 3);
+    apPool.enemy = Math.min(MAX_AP_POOL, 3);
+    apRemaining = apPool[currentPlayer];
+    movedThisTurn = new Set();
+    rollPending = false;
+    lastRoll = null;
+    updateTurnUI();
+  }
+
+  function render(){
+    boardEl.innerHTML = '';
+    for(let r=0;r<ROWS;r++){
+      for(let c=0;c<COLS;c++){
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.dataset.r = r;
+        cell.dataset.c = c;
+        const pid = grid[r][c];
+        if(pid){
+          cell.classList.add('occupied');
+          const p = pieces[pid];
+          const pieceEl = document.createElement('div');
+          pieceEl.className = 'piece ' + (p.type==='ally' ? 'ally' : (p.type==='enemy' ? 'enemy' : 'boss'));
+          // mark playable pieces visually (only if it's their piece, it's this player's turn, apRemaining > 0, and not waiting for roll)
+          if(p.type === currentPlayer && apRemaining > 0 && !rollPending) pieceEl.classList.add('playable');
+          // boss displayed as a dragon icon/letter
+          pieceEl.textContent = (p.type === 'boss') ? '🐉' : pid.slice(0,1);
+          pieceEl.dataset.id = pid;
+          if(selectedId === pid) pieceEl.classList.add('selected');
+          cell.appendChild(pieceEl);
+        }
+        cell.addEventListener('click', onCellClick);
+        boardEl.appendChild(cell);
+      }
+    }
+    updateLog();
+    updateAPDisplay();
+  }
+
+  function updateAPDisplay(){
+    apDisplay.textContent = `AP: ${apRemaining} (pool ${apPool[currentPlayer]} / max ${MAX_AP_POOL})`;
+  }
+
+  function updateLog(msg){
+    if(msg) logEl.innerHTML = `<div>${msg}</div>` + '<hr>' + logEl.innerHTML;
+    else logEl.innerHTML = generateStatus();
+  }
+
+  function generateStatus(){
+    const lines = [];
+    lines.push(`<strong>Current Player:</strong> ${currentPlayer.toUpperCase()}`);
+    lines.push(lastRoll ? `<strong>Last roll:</strong> ${lastRoll}` : `<strong>Last roll:</strong> —`);
+    lines.push(`<strong>AP remaining:</strong> ${apRemaining}`);
+    lines.push('<strong>Pieces</strong>');
+    Object.values(pieces).forEach(p=>{
+      if(p.type === 'boss') lines.push(`${p.id} — ${p.name.toUpperCase()} @ (${p.r}, ${p.c})`);
+      else lines.push(`${p.id} — ${p.type.toUpperCase()} @ (${p.r}, ${p.c})${movedThisTurn.has(p.id) && p.type===currentPlayer ? ' (moved)' : ''}`);
+    });
+    lines.push('<hr><em>Controls:</em> select a piece belonging to the current player → click an adjacent empty cell to move. Each move costs 1 AP. Press End Turn when done.');
+    return lines.join('<br>');
+  }
+
+  function onCellClick(e){
+    if(rollPending){
+      updateLog('Waiting for roll to finish. Click the roll overlay to continue.');
+      return;
+    }
+    const cell = e.currentTarget;
+    const r = +cell.dataset.r, c = +cell.dataset.c;
+    const pid = grid[r][c];
+
+    if(pid){
+      selectPiece(pid);
+      return;
+    }
+
+    if(selectedId){
+      const p = pieces[selectedId];
+      if(p.type !== currentPlayer){
+        updateLog(`You cannot move ${p.id} on ${currentPlayer}'s turn.`);
+        return;
+      }
+      if(apRemaining <= 0){
+        updateLog('No AP left. Press End Turn to finish your turn.');
+        return;
+      }
+      if(isAdjacent(p.r, p.c, r, c)){
+        movePiece(selectedId, r, c);
+        // consume 1 AP and mark piece as moved this turn
+        apRemaining = Math.max(0, apRemaining - 1);
+        movedThisTurn.add(selectedId);
+        const movedId = selectedId;
+        selectedId = null;
+        clearHighlights();
+        render();
+        updateLog(`${movedId} moved to (${r},${c}). AP remaining: ${apRemaining}`);
+        // Do not auto end turn anymore; player may move again while they have AP
+      } else {
+        updateLog(`Target not adjacent. Select an adjacent cell to move ${selectedId}.`);
+      }
+    }
+  }
+
+  function selectPiece(id){
+    if(rollPending){
+      updateLog('Waiting for roll to finish. Click the roll overlay to continue.');
+      return;
+    }
+    const p = pieces[id];
+    if(p.type !== currentPlayer){
+      updateLog(`Cannot select ${id}: not ${currentPlayer}'s piece.`);
+      return;
+    }
+    if(apRemaining <= 0){
+      updateLog('No AP left. Press End Turn to finish your turn.');
+      return;
+    }
+    if(selectedId === id){
+      selectedId = null;
+      clearHighlights();
+      render();
+      return;
+    }
+    selectedId = id;
+    clearHighlights();
+    highlightMoves(pieces[id]);
+    render();
+    updateLog(`Selected ${id}. Click an adjacent empty cell to move. AP remaining: ${apRemaining}`);
+  }
+
+  function clearHighlights(){
+    boardEl.querySelectorAll('.cell.highlight').forEach(n=>n.classList.remove('highlight'));
+  }
+
+  function highlightMoves(piece){
+    // allow 8-directional movement (including diagonals)
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+    dirs.forEach(d=>{
+      const nr = piece.r + d[0], nc = piece.c + d[1];
+      if(inBounds(nr,nc) && !grid[nr][nc]){
+        const cell = boardEl.querySelector(`.cell[data-r="${nr}"][data-c="${nc}"]`);
+        if(cell) cell.classList.add('highlight');
+      }
+    });
+  }
+
+  function inBounds(r,c){ return r>=0 && r<ROWS && c>=0 && c<COLS; }
+  // adjacent if Chebyshev distance === 1 (includes diagonals)
+  function isAdjacent(r1,c1,r2,c2){
+    const dr = Math.abs(r1 - r2), dc = Math.abs(c1 - c2);
+    return Math.max(dr, dc) === 1;
+  }
+
+  function movePiece(id, toR, toC){
+    const p = pieces[id];
+    grid[p.r][p.c] = null;
+    p.r = toR; p.c = toC;
+    grid[toR][toC] = id;
+  }
+
+  // Try to relocate a piece currently at (r,c) to any adjacent empty cell.
+  // Prefer cells in order: away from dragon direction if provided, otherwise up,right,left,down.
+  function relocatePiece(id, r, c, preferDir){
+    const preferOrder = [];
+    if(preferDir){
+      // preferDir is [dr,dc] indicating dragon movement direction
+      preferOrder.push([-preferDir[0], -preferDir[1]]);
+    }
+    preferOrder.push([-1,0],[0,1],[0,-1],[1,0]);
+
+    const seen = new Set();
+    for(const d of preferOrder){
+      const key = d[0]+','+d[1];
+      if(seen.has(key)) continue;
+      seen.add(key);
+      const nr = r + d[0], nc = c + d[1];
+      if(inBounds(nr,nc) && grid[nr][nc] === null){
+        // move occupant to (nr,nc)
+        grid[r][c] = null;
+        grid[nr][nc] = id;
+        pieces[id].r = nr;
+        pieces[id].c = nc;
+        return {toR: nr, toC: nc};
+      }
+    }
+
+    return null;
+  }
+
+  // Apply dragon movement based on roll value and relocate any landed-on pieces when possible.
+  function applyDragonMove(value){
+    const boss = Object.values(pieces).find(p=>p.type === 'boss');
+    if(!boss) return {moved:0,reason:'no-boss'};
+
+    let dr = 0, dc = 0;
+    let dirName = '';
+    if(value === 1){ dr = -1; dc = 0; dirName = 'up'; }
+    else if(value === 2){ dr = 0; dc = 1; dirName = 'right'; }
+    else if(value === 3){ dr = 0; dc = -1; dirName = 'left'; }
+    else if(value === 4){ dr = 1; dc = 0; dirName = 'down'; }
+    else {
+      return {moved:0,reason:'no-move'};
+    }
+
+    let stepsMoved = 0;
+    const relocations = [];
+
+    for(let step = 0; step < 3; step++){
+      const nr = boss.r + dr;
+      const nc = boss.c + dc;
+      if(!inBounds(nr,nc)) break;
+
+      const occupant = grid[nr][nc];
+      if(occupant !== null){
+        if(occupant === boss.id) break;
+        // attempt to relocate occupant away from dragon movement
+        const relocated = relocatePiece(occupant, nr, nc, [dr, dc]);
+        if(!relocated){
+          // can't relocate => block
+          break;
+        } else {
+          relocations.push({id: occupant, fromR: nr, fromC: nc, toR: relocated.toR, toC: relocated.toC});
+        }
+      }
+
+      // move dragon one step
+      grid[boss.r][boss.c] = null;
+      boss.r = nr;
+      boss.c = nc;
+      grid[boss.r][boss.c] = boss.id;
+      stepsMoved++;
+    }
+
+    return {moved: stepsMoved, dir: dirName, reason: stepsMoved ? 'moved' : 'blocked', relocations};
+  }
+
+  // show roll overlay and wait for player to acknowledge before switching player
+  function showRollAndWait(value, dragonResult){
+    lastRoll = value;
+    rollValueEl.textContent = value;
+    const titleMsg = dragonResult && dragonResult.moved > 0
+      ? `Turn ended — rolled ${value} (Dragon moved ${dragonResult.moved} ${dragonResult.dir})`
+      : `Turn ended — rolled ${value}`;
+    rollTitleEl.textContent = titleMsg;
+    rollPending = true;
+    rollOverlay.style.display = 'flex';
+    render(); // update UI (disable playable styles)
+
+    let movementMsg = '';
+    if(dragonResult){
+      if(dragonResult.moved > 0) movementMsg += `Dragon moved ${dragonResult.moved} ${dragonResult.dir}.`;
+      else movementMsg += `Dragon did not move (${dragonResult.reason}).`;
+
+      if(dragonResult.relocations && dragonResult.relocations.length){
+        dragonResult.relocations.forEach(r => {
+          movementMsg += ` ${r.id} was redirected to (${r.toR},${r.toC}).`;
+        });
+      }
+    }
+
+    updateLog(`Rolled a ${value}. ${movementMsg} Click overlay to pass turn.`);
+  }
+
+  function continueAfterRoll(){
+    if(!rollPending) return;
+    rollOverlay.style.display = 'none';
+    rollPending = false;
+    // switch player
+    currentPlayer = currentPlayer === 'ally' ? 'enemy' : 'ally';
+    // set working AP to that player's pool
+    apRemaining = apPool[currentPlayer];
+    movedThisTurn = new Set();
+    selectedId = null;
+    clearHighlights();
+    updateTurnUI();
+    render();
+    updateLog(`It is now ${currentPlayer.toUpperCase()}'s turn.`);
+  }
+
+  // End turn button behavior:
+  // - For current player, compute unmoved pieces count (their pieces not in movedThisTurn)
+  // - "Get AP back" for each unmoved piece: apPool[currentPlayer] = apRemaining + unmovedCount (capped at MAX_AP_POOL)
+  // - Then perform roll and dragon movement
+  function endTurn(){
+    if(rollPending) return;
+    // compute unmoved pieces
+    const ownPieces = Object.values(pieces).filter(p=>p.type === currentPlayer);
+    const unmovedCount = ownPieces.reduce((acc,p)=> acc + (movedThisTurn.has(p.id) ? 0 : 1), 0);
+    // update pool: remaining AP plus unmoved pieces refunded, capped at MAX_AP_POOL
+    apPool[currentPlayer] = Math.min(MAX_AP_POOL, Math.max(0, apRemaining) + unmovedCount);
+    // clamp minimal 0 (shouldn't be negative)
+    updateLog(`${currentPlayer.toUpperCase()} ended turn. Refunded ${unmovedCount} AP for unmoved pieces. Pool now ${apPool[currentPlayer]} (max ${MAX_AP_POOL}). Rolling...`);
+
+    // perform roll and dragon move
+    const value = Math.floor(Math.random()*6) + 1;
+    const dragonResult = applyDragonMove(value);
+    showRollAndWait(value, dragonResult);
+  }
+
+  rollOverlay.addEventListener('click', continueAfterRoll);
+
+  function updateTurnUI(){
+    turnLabel.textContent = (currentPlayer === 'ally') ? 'Player 1' : 'Player 2';
+    turnPill.textContent = (currentPlayer === 'ally') ? 'ALLY' : 'ENEMY';
+    turnPill.className = `turnPill ${(currentPlayer === 'ally') ? 'ally' : 'enemy'}`;
+    updateAPDisplay();
+  }
+
+  function attachKeyboard(){
+    document.addEventListener('keydown', e=>{
+      if(e.key.toLowerCase() === 'r') {
+        placeInitialPieces();
+        render();
+        updateLog('Board reset (R).');
+      }
+      if(e.key.toLowerCase() === 'm') {
+        window.location.href = 'index.html';
+      }
+      if(e.key.toLowerCase() === 'e') {
+        endTurn();
+      }
+    });
+  }
+
+  btnReset.addEventListener('click', ()=>{ placeInitialPieces(); render(); updateLog('Board reset.'); });
+  btnBack.addEventListener('click', ()=>{ window.location.href = 'index.html'; });
+  btnEndTurn.addEventListener('click', ()=>{ endTurn(); });
+
+  // initialization
+  placeInitialPieces();
+  render();
+  attachKeyboard();
+
+  // expose for console debugging
+  window.__avengement = {grid, pieces, reset: ()=>{placeInitialPieces(); render();}, getCurrentPlayer: ()=>currentPlayer, endTurn};
+})();
+</script>
+
+<!-- connect core scripts (keeps original game scripts available) -->
+<script src="scripts/game/utils.js"></script>
+<script src="scripts/game/champion.js"></script>
+<script src="scripts/game/champions/fighter.js"></script>
+<script src="scripts/game/champions/ranger.js"></script>
+<script src="scripts/game/champions/bossDragon.js"></script>
+<script src="scripts/game/boardState.js"></script>
+<script src="scripts/game/gameManager.js"></script>
+
+</body>
+</html>
