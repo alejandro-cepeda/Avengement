@@ -461,10 +461,50 @@
           return;
         }
 
+        // If a revival choice is pending, auto-select one for the AI
+        if(snapshot.pendingRevival){
+          const playerKey = snapshot.pendingRevival.playerKey;
+          const removed = (snapshot.removedChampions && snapshot.removedChampions[playerKey]) || [];
+          if(removed.length > 0){
+            // Choose the removed champion with highest maxHp (prefer sturdier revive)
+            let bestIdx = 0; let bestHp = -Infinity;
+            for(let i=0;i<removed.length;i++){ const hp = removed[i].maxHp||0; if(hp>bestHp){ bestHp=hp; bestIdx=i; } }
+            const ok = window.GameAPI.chooseRevival(playerKey, bestIdx);
+            statusEl.textContent = `Auto-reviving ${playerKey}...`;
+            logEl.innerHTML += `AUTO: Revive ${playerKey} idx ${bestIdx}\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+            await new Promise(r=>setTimeout(r, 400));
+            continue;
+          } else {
+            // No removed champions - skip briefly
+            await new Promise(r=>setTimeout(r, 200));
+            continue;
+          }
+        }
+
+        // If a threshold removal choice is pending, auto-select a victim
+        if(snapshot.activeAction === 'threshold-removal-choice' || snapshot.thresholdRemovalPending){
+          const pending = snapshot.thresholdRemovalPending || {};
+          const eligible = pending.eligibleVictims || [];
+          if(eligible.length > 0){
+            // Prefer the weakest eligible piece (lowest currentHp)
+            let chosen = eligible[0]; let bestHp = Infinity;
+            for(const id of eligible){ const p = snapshot.pieces[id]; const hp = (p && (p.currentHp||p.maxHp||0)) || 0; if(hp < bestHp){ bestHp = hp; chosen = id; } }
+            const ok = window.GameAPI.chooseThresholdRemovalById(chosen);
+            logEl.innerHTML += `AUTO: Threshold removal ${chosen}\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+            await new Promise(r=>setTimeout(r, 400));
+            continue;
+          } else {
+            await new Promise(r=>setTimeout(r, 200));
+            continue;
+          }
+        }
+
         // Determine current actor
         const actor = snapshot.currentActor || 'ally';
         const actorDisplay = actor === 'ally' ? '🔵 P1' : (actor === 'enemy' ? '🔴 P2' : '🐉');
-        
+
         // If it's the dragon's turn, skip AI control and let the game's built-in dragon handler run
         if(actor === 'boss') {
           statusEl.textContent = `Move ${moveCount + 1}: ${actorDisplay} acting automatically...`;
@@ -473,7 +513,7 @@
           moveCount++;
           continue;
         }
-        
+
         statusEl.textContent = `Move ${moveCount + 1}: ${actorDisplay} acting...`;
         
         // Small delay for visual feedback

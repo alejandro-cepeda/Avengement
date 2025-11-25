@@ -1826,7 +1826,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
     const gridCopy = grid.map(row => row.slice());
     const playerCopy = { ally: Object.assign({}, player.ally), enemy: Object.assign({}, player.enemy) };
     const setupPlacedCopy = { ally: setupPlaced.ally.slice(), enemy: setupPlaced.enemy.slice() };
-    return { pieces: piecesCopy, grid: gridCopy, player: playerCopy, setupPlaced: setupPlacedCopy, dragonId, currentActor };
+    // Include interactive flags so AI can detect pending UI choices
+    const removedCopy = { ally: (removedChampions.ally||[]).slice(), enemy: (removedChampions.enemy||[]).slice() };
+    return { pieces: piecesCopy, grid: gridCopy, player: playerCopy, setupPlaced: setupPlacedCopy, dragonId, currentActor, activeAction, pendingRevival, thresholdRemovalPending, dragonDisplacingPiece, removedChampions: removedCopy };
   }
 
   // Enumerate simple legal actions for a given actor on a provided state snapshot
@@ -1935,7 +1937,28 @@ document.addEventListener('DOMContentLoaded', ()=>{
   window.GameAPI = {
     snapshot: snapshotState,
     enumerateActionsForState: enumerateActionsForState,
-    applyActionToLive: applyActionToLive
+    applyActionToLive: applyActionToLive,
+    // Choose a revival option (index into removedChampions[playerKey])
+    chooseRevival: function(playerKey, championIndex){
+      try{
+        if(!pendingRevival || !removedChampions[playerKey]) return false;
+        // If revival index out of range, clamp
+        const idx = Math.max(0, Math.min(championIndex|0, removedChampions[playerKey].length-1));
+        reviveChampion(playerKey, idx);
+        return true;
+      } catch(e){ console.warn('chooseRevival error', e); return false; }
+    },
+    // Choose a threshold removal by piece id (simulate clicking that cell)
+    chooseThresholdRemovalById: function(pieceId){
+      try{
+        if(!thresholdRemovalPending) return false;
+        const p = pieces[pieceId]; if(!p) return false;
+        const cell = boardEl.querySelector(`.cell[data-r="${p.r}"][data-c="${p.c}"]`);
+        if(!cell) return false;
+        cell.click();
+        return true;
+      } catch(e){ console.warn('chooseThresholdRemovalById error', e); return false; }
+    }
   };
 
   window.__av2 = {pieces,grid,player,render};
