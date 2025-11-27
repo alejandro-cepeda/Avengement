@@ -130,6 +130,60 @@
 
   <aside class="sidebar" id="rightSidebar">
     <h1>Class Card</h1>
+    <div class="panel" style="margin-top:8px">
+      <strong>Single AI Move</strong>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <label class="muted" style="font-size:12px;flex:0 0 70px">Actor:</label>
+          <select id="aiActor" style="flex:1">
+            <option value="ally">🔵 Player 1 (Ally)</option>
+            <option value="enemy">🔴 Player 2 (Enemy)</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <label class="muted" style="font-size:12px;flex:0 0 70px">Iterations:</label>
+          <input id="aiIterations" type="number" value="40" min="4" style="flex:1"/>
+        </div>
+        <button id="btnAIMove" class="small" style="width:100%;background:#092532;border:1px solid rgba(102,217,255,0.2)">🎯 Suggest & Play</button>
+      </div>
+      <div id="aiStatus" class="muted" style="margin-top:10px;font-size:12px;text-align:center">Ready</div>
+    </div>
+
+    <div class="panel" style="margin-top:8px">
+      <strong>AI Difficulties</strong>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+        <div style="padding:8px;background:rgba(102,217,255,0.08);border-radius:6px;border-left:3px solid rgba(102,217,255,0.3)">
+          <div class="muted" style="font-size:11px;margin-bottom:4px">🔵 PLAYER 1</div>
+          <select id="aiDifficultyAlly" style="width:100%">
+            <option value="medium">🧠 Medium (MCTS) — Smart adaptive play</option>
+            <option value="easy">🏹 Easy (Rangers) — Bullseye focused</option>
+          </select>
+        </div>
+        <div style="padding:8px;background:rgba(255,155,107,0.08);border-radius:6px;border-left:3px solid rgba(255,155,107,0.3)">
+          <div class="muted" style="font-size:11px;margin-bottom:4px">🔴 PLAYER 2</div>
+          <select id="aiDifficultyEnemy" style="width:100%">
+            <option value="medium">🧠 Medium (MCTS) — Smart adaptive play</option>
+            <option value="easy">🏹 Easy (Rangers) — Bullseye focused</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:8px">
+      <strong>AI vs AI Demo</strong>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <label class="muted" style="font-size:12px;flex:0 0 70px">Iterations:</label>
+          <input id="aiVsAIIterations" type="number" value="20" min="4" style="flex:1"/>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button id="btnAIVsAIStart" class="small" style="flex:1;background:#092532;border:1px solid rgba(102,217,255,0.2)">▶ Start Demo</button>
+          <button id="btnAIVsAIPause" class="small" style="flex:1;display:none;background:#ff6b6b;border:1px solid rgba(255,107,107,0.3)">⏸ Pause</button>
+        </div>
+      </div>
+      <div id="aiVsAIStatus" class="muted" style="margin-top:10px;font-size:12px;min-height:30px;line-height:1.4;text-align:center">Ready</div>
+      <div id="aiVsAILog" class="log" style="margin-top:8px;min-height:80px;max-height:120px;font-size:11px;overflow-y:auto;white-space:pre-wrap;word-break:break-word"></div>
+    </div>
     <div id="cardContainer" style="display:flex;flex-direction:column;gap:12px">
       <div class="panel" style="text-align:center">
         <div id="cardTitle" class="muted" style="font-size:14px">Select a piece to view details</div>
@@ -190,5 +244,522 @@
 <script src="scripts/game/champions/bossDragon.js"></script>
 <script src="scripts/game/utils.js"></script>
 <script src="scripts/game/app.js"></script>
+<script>
+// Minimal Monte-Carlo evaluator that uses GameAPI to simulate actions and apply the best one.
+(() => {
+  function deepClone(obj){ return JSON.parse(JSON.stringify(obj)); }
+
+  function scoreStateForActor(state, actor){
+    const opponent = actor === 'ally' ? 'enemy' : 'ally';
+    const myHp = (state.player && state.player[actor] && state.player[actor].hpCurrent) || 0;
+    const oppHp = (state.player && state.player[opponent] && state.player[opponent].hpCurrent) || 0;
+    const myPieces = Object.values(state.pieces).filter(p=>p.player===actor).length;
+    const oppPieces = Object.values(state.pieces).filter(p=>p.player===opponent).length;
+    const myTotalHp = Object.values(state.pieces).filter(p=>p.player===actor).reduce((sum,p)=>(sum + (p.currentHp||0)), 0);
+    const oppTotalHp = Object.values(state.pieces).filter(p=>p.player===opponent).reduce((sum,p)=>(sum + (p.currentHp||0)), 0);
+    
+    // Primary objective: eliminate all enemy pieces (huge bonus for piece elimination)
+    const pieceDiff = myPieces - oppPieces;
+    
+    // Secondary objectives: maximize own piece count and health
+    const score = 
+      pieceDiff * 100 +           // piece elimination is the main goal
+      oppTotalHp * (-5) +         // heavily penalize leaving enemies alive
+      myTotalHp * 1 +             // slight bonus for keeping own pieces healthy
+      (myHp - oppHp) * 0.5 +      // minor player HP difference
+      (myPieces > 0 ? 10 : -500); // massive penalty for losing all pieces
+    
+    return score;
+  }
+
+  function applyActionToState(state, action){
+    // Mutate the passed state snapshot
+    if(action.type === 'move'){
+      const p = state.pieces[action.pieceId]; if(!p) return;
+      state.grid[p.r][p.c] = null; p.r = action.to.r; p.c = action.to.c; state.grid[p.r][p.c] = p.id;
+      if(p.player && p.player !== 'boss' && state.player && state.player[p.player]) state.player[p.player].ap = Math.max(0, state.player[p.player].ap - 1);
+      return;
+    }
+    if(action.type === 'strike'){
+      const attacker = state.pieces[action.attacker]; const target = state.pieces[action.target]; if(!attacker || !target) return;
+      if(attacker.player && attacker.player !== 'boss' && state.player && state.player[attacker.player]) state.player[attacker.player].ap = Math.max(0, state.player[attacker.player].ap - 1);
+      target.currentHp = (target.currentHp || target.maxHp) - 2;
+      if(target.player !== 'boss' && state.player && state.player[target.player]) state.player[target.player].hpCurrent = Math.max(0, state.player[target.player].hpCurrent - 2);
+      // Optional displacement in simulation
+      if(action.displaceTo && state.pieces[target.id]){
+        const dr = action.displaceTo.r, dc = action.displaceTo.c;
+        if(dr>=0 && dr<state.grid.length && dc>=0 && dc<state.grid[0].length && state.grid[dr][dc] === null){ state.grid[target.r][target.c] = null; target.r = dr; target.c = dc; state.grid[dr][dc] = target.id; }
+      }
+      if(target.currentHp <= 0){ // remove piece
+        state.grid[target.r][target.c] = null; delete state.pieces[target.id]; state.setupPlaced[target.player] = state.setupPlaced[target.player].filter(x=>x!==target.id);
+      }
+      return;
+    }
+    if(action.type === 'quick'){
+      const attacker = state.pieces[action.attacker]; const target = state.pieces[action.target]; if(!attacker || !target) return;
+      if(attacker.player && attacker.player !== 'boss' && state.player && state.player[attacker.player]) state.player[attacker.player].ap = Math.max(0, state.player[attacker.player].ap - 1);
+      target.currentHp = (target.currentHp || target.maxHp) - 1;
+      if(target.player !== 'boss' && state.player && state.player[target.player]) state.player[target.player].hpCurrent = Math.max(0, state.player[target.player].hpCurrent - 1);
+      if(target.currentHp <= 0){ state.grid[target.r][target.c] = null; delete state.pieces[target.id]; state.setupPlaced[target.player] = state.setupPlaced[target.player].filter(x=>x!==target.id); }
+      return;
+    }
+    if(action.type === 'rest'){
+      const p = state.pieces[action.pieceId]; if(!p) return; // apply rest rewards immediately for simplicity
+      if(state.player && state.player[p.player]){
+        state.player[p.player].ap = Math.min(6, (state.player[p.player].ap||0) + 1);
+        state.player[p.player].hpCurrent = Math.min(state.player[p.player].hpTotal||0, (state.player[p.player].hpCurrent||0) + 1);
+      }
+      return;
+    }
+    if(action.type === 'bullseye'){
+      const attacker = state.pieces[action.attacker]; const target = state.pieces[action.target]; if(!attacker || !target) return; const spend = Math.max(1, Math.min(action.spend||1, (state.player && state.player[attacker.player] && state.player[attacker.player].ap) || 0)); if(attacker.player && attacker.player !== 'boss' && state.player && state.player[attacker.player]) state.player[attacker.player].ap = Math.max(0, (state.player[attacker.player]&&state.player[attacker.player].ap) - spend); target.currentHp = (target.currentHp || target.maxHp) - (2 * spend); if(target.player !== 'boss' && state.player && state.player[target.player]) state.player[target.player].hpCurrent = Math.max(0, state.player[target.player].hpCurrent - (2 * spend)); if(target.currentHp <= 0){ state.grid[target.r][target.c] = null; delete state.pieces[target.id]; state.setupPlaced[target.player] = state.setupPlaced[target.player].filter(x=>x!==target.id); } return; }
+    if(action.type === 'lunging'){
+      const attacker = state.pieces[action.attacker]; if(!attacker) return; if(state.player && state.player[attacker.player]) state.player[attacker.player].ap = Math.max(0, state.player[attacker.player].ap - 3);
+      // Hit adjacent for 2 dmg
+      const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+      const adj = [];
+      for(const d of dirs){ const nr=attacker.r+d[0], nc=attacker.c+d[1]; if(nr>=0 && nr<state.grid.length && nc>=0 && nc<state.grid[0].length && state.grid[nr][nc]) adj.push(state.grid[nr][nc]); }
+      adj.forEach(tid=>{ const tgt = state.pieces[tid]; if(tgt){ tgt.currentHp = (tgt.currentHp||tgt.maxHp) - 2; if(tgt.player !== 'boss' && state.player && state.player[tgt.player]) state.player[tgt.player].hpCurrent = Math.max(0, state.player[tgt.player].hpCurrent - 2); } });
+      // Optionally displace surviving targets to a random adjacent empty tile
+      for(const tid of adj){ const tgt = state.pieces[tid]; if(tgt && tgt.currentHp > 0){ const empties = []; for(const d of dirs){ const tr = tgt.r + d[0], tc = tgt.c + d[1]; if(tr>=0 && tr<state.grid.length && tc>=0 && tc<state.grid[0].length && state.grid[tr][tc] === null) empties.push({r:tr,c:tc}); } if(empties.length>0){ const choice = empties[Math.floor(Math.random()*empties.length)]; state.grid[tgt.r][tgt.c] = null; tgt.r = choice.r; tgt.c = choice.c; state.grid[choice.r][choice.c] = tgt.id; } }
+      }
+      // Allow up to 3 random adjacent moves for attacker
+      for(let m=0;m<3;m++){ const empties = []; for(const d of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]){ const nr=attacker.r+d[0], nc=attacker.c+d[1]; if(nr>=0 && nr<state.grid.length && nc>=0 && nc<state.grid[0].length && state.grid[nr][nc] === null) empties.push({r:nr,c:nc}); } if(empties.length===0) break; const ch = empties[Math.floor(Math.random()*empties.length)]; state.grid[attacker.r][attacker.c] = null; attacker.r = ch.r; attacker.c = ch.c; state.grid[ch.r][ch.c] = attacker.id; }
+      return;
+    }
+    if(action.type === 'endTurn'){
+      // Simplified: rotate actor order ally->boss->enemy->boss; if boss, simulate boss action immediately
+      if(state.currentActor === 'ally') state.currentActor = 'boss';
+      else if(state.currentActor === 'boss') state.currentActor = 'enemy';
+      else if(state.currentActor === 'enemy') state.currentActor = 'boss';
+      // If we moved into boss, process a sampled boss action
+      if(state.currentActor === 'boss'){
+        // sample d6
+        const v = Math.floor(Math.random()*6)+1;
+        if(v >=1 && v <=4){
+          // move by direction mapping
+          const map = {1:[-1,0],2:[0,1],3:[0,-1],4:[1,0]};
+          const [dr,dc] = map[v];
+          const boss = state.pieces[state.dragonId];
+          if(boss){
+            let finalR = boss.r, finalC = boss.c; let moved=0;
+            for(let step=0; step<3; step++){ let nr = finalR+dr, nc = finalC+dc; if(nr<0||nr>=state.grid.length||nc<0||nc>=state.grid[0].length){ break; } finalR=nr; finalC=nc; moved++; }
+            if(moved>0){ const targetId = state.grid[finalR][finalC]; if(targetId && state.pieces[targetId] && targetId !== state.dragonId){ // displace target: remove from grid only
+              const tgt = state.pieces[targetId]; state.grid[tgt.r][tgt.c] = null; // the player will place it; simulate a penalty: 3 damage
+              tgt.currentHp = (tgt.currentHp||tgt.maxHp) - 3; if(tgt.player !== 'boss' && state.player && state.player[tgt.player]) state.player[tgt.player].hpCurrent = Math.max(0, state.player[tgt.player].hpCurrent - 3); if(tgt.currentHp<=0){ delete state.pieces[targetId]; state.setupPlaced[tgt.player]=state.setupPlaced[tgt.player].filter(x=>x!==targetId); }
+              }
+              // move boss
+              state.grid[boss.r][boss.c] = null; boss.r = finalR; boss.c = finalC; state.grid[boss.r][boss.c] = boss.id;
+            }
+          }
+        } else if(v === 5){ const boss = state.pieces[state.dragonId]; if(boss) boss.currentHp = Math.min(boss.maxHp, (boss.currentHp||boss.maxHp) + 3); }
+        else { // firebreath 6
+          const boss = state.pieces[state.dragonId]; if(boss){ const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]; dirs.forEach(d=>{ const nr=boss.r+d[0], nc=boss.c+d[1]; if(nr>=0&&nr<state.grid.length&&nc>=0&&nc<state.grid[0].length){ const tid=state.grid[nr][nc]; if(tid && state.pieces[tid] && state.pieces[tid].player !== 'boss'){ state.pieces[tid].currentHp = (state.pieces[tid].currentHp||state.pieces[tid].maxHp)-3; if(state.player && state.player[state.pieces[tid].player]) state.player[state.pieces[tid].player].hpCurrent = Math.max(0, state.player[state.pieces[tid].player].hpCurrent - 3); if(state.pieces[tid].currentHp<=0){ delete state.pieces[tid]; state.grid[nr][nc]=null; state.setupPlaced[ state.pieces[tid]?.player ] = (state.setupPlaced[ state.pieces[tid]?.player ] || []).filter(x=>x!==tid); } } } }); }
+        }
+        // advance from boss
+        state.currentActor = (state.currentActor === 'boss') ? 'enemy' : state.currentActor;
+      }
+      return;
+    }
+  }
+
+  function monteCarloEvaluateAction(rootState, action, actor, playouts){
+    let total = 0;
+    for(let i=0;i<playouts;i++){
+      const s = deepClone(rootState);
+      // apply chosen action
+      applyActionToState(s, action);
+      // random playout with preference for offensive actions
+      let depth = 0; const MAX_DEPTH = 12;
+      while(depth < MAX_DEPTH){
+        // terminal if one side has no pieces
+        const allyCount = Object.values(s.pieces).filter(p=>p.player==='ally').length;
+        const enemyCount = Object.values(s.pieces).filter(p=>p.player==='enemy').length;
+        if(allyCount===0 || enemyCount===0) break;
+        // pick legal action for the current actor, with bias toward offensive moves
+        const current = s.currentActor || actor;
+        const actions = window.GameAPI.enumerateActionsForState(s, current);
+        if(!actions || actions.length===0) break;
+        
+        // Categorize actions: attacks (strike, quick, bullseye, lunging) vs other
+        const attackActions = actions.filter(a => ['strike','quick','bullseye','lunging'].includes(a.type));
+        const otherActions = actions.filter(a => !['strike','quick','bullseye','lunging'].includes(a.type));
+        
+        // Select action: 70% chance to pick an attack if available, 30% pick randomly
+        let selectedAction;
+        if(attackActions.length > 0 && Math.random() < 0.7){
+          selectedAction = attackActions[Math.floor(Math.random()*attackActions.length)];
+        } else {
+          selectedAction = actions[Math.floor(Math.random()*actions.length)];
+        }
+        
+        applyActionToState(s, selectedAction);
+        depth++;
+      }
+      total += scoreStateForActor(s, actor);
+    }
+    return total / Math.max(1, playouts);
+  }
+
+  async function findBestAction(iterations, actor){
+    const root = window.GameAPI.snapshot();
+    // ensure currentActor is set
+    if(!root.currentActor) root.currentActor = actor;
+    
+    // Skip dragon turns — the AI only controls ally and enemy players
+    if(root.currentActor === 'boss') return null;
+    
+    const actions = window.GameAPI.enumerateActionsForState(root, actor);
+    if(!actions || actions.length===0) return null;
+    const perAction = Math.max(1, Math.floor(iterations / actions.length));
+    
+    // Count how many pieces of this actor have already acted
+    const playerPieces = Object.values(root.pieces).filter(p=>p.player===actor);
+    const actedCount = playerPieces.filter(p=>p.acted || p.rested).length;
+    const mostPiecesActed = actedCount >= playerPieces.length * 0.7; // 70%+ have acted
+    
+    let best = null; let bestScore = -Infinity;
+    for(const a of actions){
+      let avg = monteCarloEvaluateAction(root, a, actor, perAction);
+      // Bonus for endTurn action if most pieces have already acted (encourages turn ending)
+      if(a.type === 'endTurn' && mostPiecesActed) avg += 50;
+      // console.log('Action', a, 'score', avg);
+      if(avg > bestScore){ bestScore = avg; best = a; }
+    }
+    return best;
+  }
+
+  // Easy AI: simple heuristic that prefers rangers and bullseye-focused play
+  async function findBestActionEasy(iterations, actor){
+    const root = window.GameAPI.snapshot();
+    if(!root.currentActor) root.currentActor = actor;
+    if(root.currentActor === 'boss') return null;
+    const actions = window.GameAPI.enumerateActionsForState(root, actor) || [];
+    if(actions.length === 0) return null;
+
+    // helper to get piece by action
+    const getActorPiece = (a) => { const id = a.attacker || a.pieceId || a.attacker; return root.pieces && root.pieces[id]; };
+
+    // Filter actions that originate from ranger pieces
+    const rangerActions = actions.filter(a => {
+      const p = getActorPiece(a);
+      return p && (p.champion === 'ranger' || (p.name && String(p.name).toLowerCase().includes('ranger')));
+    });
+
+    // If we have ranger actions, prioritize bullseye attacks from rangers
+    if(rangerActions.length > 0){
+      const bullActions = rangerActions.filter(a => a.type === 'bullseye');
+      const ap = (root.player && root.player[actor] && root.player[actor].ap) || 0;
+
+      if(bullActions.length > 0){
+        // Prefer bull actions we can afford (or the smallest spend if none affordable)
+        const affordable = bullActions.filter(a => (typeof a.spend === 'undefined') || (a.spend <= ap));
+        const pool = affordable.length > 0 ? affordable : bullActions.slice();
+
+        // Choose bull action that targets the nearest enemy
+        let best = null; let bestDist = Infinity;
+        for(const a of pool){
+          const atk = getActorPiece(a);
+          const tgt = root.pieces && root.pieces[a.target];
+          if(atk && tgt){
+            const d = Math.abs(atk.r - tgt.r) + Math.abs(atk.c - tgt.c);
+            if(d < bestDist){ bestDist = d; best = a; }
+          } else if(!a.target && !best){ best = a; }
+        }
+        if(best) return best;
+      }
+
+      // Otherwise pick strike/quick targeting nearest enemy
+      const attackCandidates = rangerActions.filter(a => ['strike','quick','lunging','bullseye'].includes(a.type));
+      if(attackCandidates.length > 0){
+        let best = null; let bestD = Infinity;
+        for(const a of attackCandidates){
+          const atk = getActorPiece(a);
+          const tgt = root.pieces && root.pieces[a.target];
+          if(atk && tgt){
+            const d = Math.abs(atk.r - tgt.r) + Math.abs(atk.c - tgt.c);
+            if(d < bestD){ bestD = d; best = a; }
+          }
+        }
+        if(best) return best;
+      }
+
+      // If no immediate attack, try moves that get rangers closer to enemies
+      const moveActions = rangerActions.filter(a => a.type === 'move' && a.to);
+      if(moveActions.length > 0){
+        let best = null; let bestScore = -Infinity;
+        const enemies = Object.values(root.pieces).filter(p => p.player && p.player !== actor && p.player !== 'boss');
+        for(const a of moveActions){
+          const atk = root.pieces && root.pieces[a.pieceId]; if(!atk) continue;
+          let minBefore = Infinity, minAfter = Infinity;
+          for(const e of enemies){ const db = Math.abs(atk.r - e.r) + Math.abs(atk.c - e.c); const da = Math.abs(a.to.r - e.r) + Math.abs(a.to.c - e.c); minBefore = Math.min(minBefore, db); minAfter = Math.min(minAfter, da); }
+          const score = (minBefore - minAfter);
+          if(score > bestScore){ bestScore = score; best = a; }
+        }
+        if(best) return best;
+      }
+    }
+
+    // Fallback: if no ranger-focused option, use medium MCTS
+    return await findBestAction(iterations, actor);
+  }
+
+  async function findBestActionForDifficulty(iterations, actor, difficulty){
+    if(difficulty === 'easy') return await findBestActionEasy(iterations, actor);
+    return await findBestAction(iterations, actor);
+  }
+
+  // Build HTML fragment (no <html> wrapper) for inserting into modal
+  function buildBoardFragment(parsed){
+    try{
+      const ROWS = parsed.grid ? parsed.grid.length : 7;
+      const COLS = parsed.grid ? parsed.grid[0].length : 7;
+      const piecesMap = {};
+      if(parsed.p && Array.isArray(parsed.p)){
+        parsed.p.forEach(arr=>{ piecesMap[arr[0]] = { id:arr[0], player:arr[1], champion:arr[2], r:arr[3], c:arr[4], currentHp:arr[5] }; });
+      } else if(parsed.pieces){ for(const id in parsed.pieces){ piecesMap[id] = parsed.pieces[id]; } }
+
+      let html = '';
+      html += `<h2 style="margin:0 0 8px 0">Example Board State</h2>`;
+      html += `<div style="display:flex;gap:12px;align-items:flex-start">`;
+      html += `<div class="modal-board" style="flex:0 0 auto">`;
+      html += `<div class="board" style="display:grid;grid-template-columns:repeat(${COLS},36px);grid-auto-rows:36px;gap:6px">`;
+
+      const grid = (parsed.grid && parsed.grid.map(r=>r.slice())) || Array.from({length:ROWS}, ()=>Array(COLS).fill(null));
+      for(const id  in piecesMap){ const p = piecesMap[id]; if(p && Number.isFinite(p.r) && Number.isFinite(p.c)) grid[p.r][p.c] = id; }
+      for(let r=0;r<ROWS;r++){
+        for(let c=0;c<COLS;c++){
+          const pid = grid[r][c];
+          if(pid && piecesMap[pid]){
+            const p = piecesMap[pid];
+            const cls = p.player === 'ally' ? 'ally' : (p.player === 'enemy' ? 'enemy' : 'boss');
+            const symbol = p.champion === 'ranger' ? '🏹' : (p.champion === 'fighter' ? '⚔' : (p.champion === 'dragon' ? '🐉' : (p.champion||'◼')));
+            html += `<div style="width:36px;height:36px;background:#0f1720;border-radius:6px;display:flex;align-items:center;justify-content:center"><div style="font-size:14px">${symbol}</div></div>`;
+          } else {
+            html += `<div style="width:36px;height:36px;background:rgba(255,255,255,0.01);border-radius:6px"></div>`;
+          }
+        }
+      }
+      html += `</div>`; // board
+      html += `</div>`; // modal-board
+
+      html += `<div style="flex:1;min-width:260px">`;
+      html += `<div style="font-size:13px;color:#9aa8b3;margin-bottom:8px">Actor: ${parsed.actor || parsed.currentActor || '-'} — Players: A(AP:${parsed.players?.ally?.ap||0},HP:${parsed.players?.ally?.hp||parsed.players?.ally?.hpCurrent||0}) | E(AP:${parsed.players?.enemy?.ap||0},HP:${parsed.players?.enemy?.hp||parsed.players?.enemy?.hpCurrent||0})</div>`;
+      html += `<div style="background:rgba(255,255,255,0.02);padding:8px;border-radius:6px;max-height:320px;overflow:auto"><strong>Pieces</strong><ul style="margin:8px 0 0 14px;padding:0;line-height:1.4;color:#e6eef3">`;
+      for(const id in piecesMap){ const p = piecesMap[id]; html += `<li style="margin-bottom:6px">${id} — ${p.champion||p.name||'-'} — ${p.player} — at (${p.r},${p.c}) — HP: ${p.currentHp||p.hp||'-'}</li>`; }
+      html += `</ul></div>`;
+      html += `</div>`; // right col
+      html += `</div>`; // flex
+      return html;
+    }catch(e){ return `<pre>Error rendering state: ${e.message}</pre>`; }
+  }
+
+  // Show modal overlay containing the parsed board state
+  function showStateModal(parsed){
+    try{
+      // create overlay
+      const overlay = document.createElement('div'); overlay.style.position='fixed'; overlay.style.left='0'; overlay.style.top='0'; overlay.style.right='0'; overlay.style.bottom='0'; overlay.style.background='rgba(0,0,0,0.6)'; overlay.style.zIndex='9999'; overlay.style.display='flex'; overlay.style.alignItems='center'; overlay.style.justifyContent='center';
+      const modal = document.createElement('div'); modal.style.width='820px'; modal.style.maxWidth='calc(100% - 40px)'; modal.style.maxHeight='calc(100% - 40px)'; modal.style.background='#071019'; modal.style.border='1px solid rgba(255,255,255,0.04)'; modal.style.padding='14px'; modal.style.borderRadius='10px'; modal.style.boxShadow='0 12px 48px rgba(0,0,0,0.7)'; modal.style.color='#e6eef3'; modal.style.overflow='auto';
+      // header
+      const header = document.createElement('div'); header.style.display='flex'; header.style.justifyContent='space-between'; header.style.alignItems='center'; header.style.marginBottom='8px';
+      const title = document.createElement('div'); title.innerHTML = `<strong>Example Board State</strong>`; header.appendChild(title);
+      const controls = document.createElement('div'); controls.style.display='flex'; controls.style.gap='8px';
+      const btnExport = document.createElement('button'); btnExport.className='small'; btnExport.textContent='Export JSON';
+      btnExport.addEventListener('click', ()=>{ const data = JSON.stringify(parsed, null, 2); const blob = new Blob([data], {type:'application/json'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'av_state.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); });
+      const btnClose = document.createElement('button'); btnClose.className='small'; btnClose.textContent='Close'; btnClose.addEventListener('click', ()=>{ overlay.remove(); });
+      controls.appendChild(btnExport); controls.appendChild(btnClose); header.appendChild(controls);
+
+      modal.appendChild(header);
+      const body = document.createElement('div'); body.innerHTML = buildBoardFragment(parsed);
+      modal.appendChild(body);
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+    }catch(e){ alert('Failed to open modal: '+e.message); console.warn(e); }
+  }
+
+  document.addEventListener('DOMContentLoaded', ()=>{
+    const btn = document.getElementById('btnAIMove');
+    const status = document.getElementById('aiStatus');
+    btn.addEventListener('click', async ()=>{
+      const actor = document.getElementById('aiActor').value;
+      const iter = parseInt(document.getElementById('aiIterations').value,10) || 20;
+      const difficulty = (actor === 'ally') ? document.getElementById('aiDifficultyAlly').value : document.getElementById('aiDifficultyEnemy').value;
+      status.textContent = 'Computing...';
+      try{
+        const best = await findBestActionForDifficulty(iter, actor, difficulty);
+        if(!best){ status.textContent = 'No legal action found.'; return; }
+        status.textContent = 'Applying: ' + JSON.stringify(best);
+        // Apply to live game
+        const ok = window.GameAPI.applyActionToLive(best);
+        if(!ok) status.textContent = 'AI attempted action but it failed to apply.';
+        else status.textContent = 'Action applied.';
+      } catch(e){ status.textContent = 'Error: '+e.message; console.error(e); }
+      setTimeout(()=>{ status.textContent = 'Ready'; }, 1200);
+    });
+
+    // AI vs AI auto-play demo
+    let aiVsAIRunning = false;
+    let aiVsAIPauseRequested = false;
+    const btnStart = document.getElementById('btnAIVsAIStart');
+    const btnPause = document.getElementById('btnAIVsAIPause');
+    const statusEl = document.getElementById('aiVsAIStatus');
+    const logEl = document.getElementById('aiVsAILog');
+
+    async function runAIVsAI() {
+      aiVsAIRunning = true;
+      aiVsAIPauseRequested = false;
+      btnStart.style.display = 'none';
+      btnPause.style.display = 'inline-block';
+      logEl.innerHTML = '';
+      statusEl.textContent = 'Starting AI vs AI demo...';
+      
+      const iterations = parseInt(document.getElementById('aiVsAIIterations').value, 10) || 20;
+      let moveCount = 0;
+      const MAX_MOVES = 150;
+
+      while(aiVsAIRunning && moveCount < MAX_MOVES) {
+        if(aiVsAIPauseRequested) {
+          statusEl.textContent = '⏸️ Paused';
+          break;
+        }
+
+        // Check game state
+        const snapshot = window.GameAPI.snapshot();
+        const allyCount = Object.values(snapshot.pieces).filter(p=>p.player==='ally').length;
+        const enemyCount = Object.values(snapshot.pieces).filter(p=>p.player==='enemy').length;
+        const dragonDead = !snapshot.pieces[snapshot.dragonId];
+
+        // Terminal conditions
+        if(allyCount === 0 || enemyCount === 0 || dragonDead) {
+          let winner = '';
+          if(dragonDead) winner = '🐉 Dragon defeated!';
+          else if(allyCount === 0) winner = '🔴 Player 2 wins!';
+          else if(enemyCount === 0) winner = '🔵 Player 1 wins!';
+          statusEl.innerHTML = `<strong>✓ Game Over!</strong> ${winner}<br>Moves: ${moveCount}`;
+          aiVsAIRunning = false;
+          btnStart.style.display = 'inline-block';
+          btnPause.style.display = 'none';
+          return;
+        }
+
+        // If a revival choice is pending, auto-select one for the AI
+        if(snapshot.pendingRevival){
+          const playerKey = snapshot.pendingRevival.playerKey;
+          const removed = (snapshot.removedChampions && snapshot.removedChampions[playerKey]) || [];
+          if(removed.length > 0){
+            // Choose the removed champion with highest maxHp (prefer sturdier revive)
+            let bestIdx = 0; let bestHp = -Infinity;
+            for(let i=0;i<removed.length;i++){ const hp = removed[i].maxHp||0; if(hp>bestHp){ bestHp=hp; bestIdx=i; } }
+            const ok = window.GameAPI.chooseRevival(playerKey, bestIdx);
+            statusEl.textContent = `Auto-reviving ${playerKey}...`;
+            logEl.innerHTML += `AUTO: Revive ${playerKey} idx ${bestIdx}\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+            await new Promise(r=>setTimeout(r, 400));
+            continue;
+          } else {
+            // No removed champions - skip briefly
+            await new Promise(r=>setTimeout(r, 200));
+            continue;
+          }
+        }
+
+        // If a threshold removal choice is pending, auto-select a victim
+        if(snapshot.activeAction === 'threshold-removal-choice' || snapshot.thresholdRemovalPending){
+          const pending = snapshot.thresholdRemovalPending || {};
+          const eligible = pending.eligibleVictims || [];
+          if(eligible.length > 0){
+            // Prefer the weakest eligible piece (lowest currentHp)
+            let chosen = eligible[0]; let bestHp = Infinity;
+            for(const id of eligible){ const p = snapshot.pieces[id]; const hp = (p && (p.currentHp||p.maxHp||0)) || 0; if(hp < bestHp){ bestHp = hp; chosen = id; } }
+            const ok = window.GameAPI.chooseThresholdRemovalById(chosen);
+            logEl.innerHTML += `AUTO: Threshold removal ${chosen}\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+            await new Promise(r=>setTimeout(r, 400));
+            continue;
+          } else {
+            await new Promise(r=>setTimeout(r, 200));
+            continue;
+          }
+        }
+
+        // Determine current actor
+        const actor = snapshot.currentActor || 'ally';
+          const difficulty = (actor === 'ally') ? document.getElementById('aiDifficultyAlly').value : document.getElementById('aiDifficultyEnemy').value;
+        const actorDisplay = actor === 'ally' ? '🔵 P1' : (actor === 'enemy' ? '🔴 P2' : '🐉');
+
+        // If it's the dragon's turn, skip AI control and let the game's built-in dragon handler run
+        if(actor === 'boss') {
+          statusEl.textContent = `Move ${moveCount + 1}: ${actorDisplay} acting automatically...`;
+          // Wait for dragon's auto-action to complete (it has built-in setTimeout delays)
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          moveCount++;
+          continue;
+        }
+
+        statusEl.textContent = `Move ${moveCount + 1}: ${actorDisplay} acting...`;
+        
+        // Small delay for visual feedback
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+        try {
+          const best = await findBestActionForDifficulty(iterations, actor, difficulty);
+          if(!best) {
+            statusEl.innerHTML = `<strong>✗ Error:</strong> No legal action (${moveCount} moves)`;
+            aiVsAIRunning = false;
+            btnStart.style.display = 'inline-block';
+            btnPause.style.display = 'none';
+            return;
+          }
+          
+          const ok = window.GameAPI.applyActionToLive(best);
+          if(!ok) {
+            statusEl.innerHTML = `<strong>✗ Error:</strong> Action failed (${moveCount} moves)`;
+            aiVsAIRunning = false;
+            btnStart.style.display = 'inline-block';
+            btnPause.style.display = 'none';
+            return;
+          }
+          
+          // Log the move
+          const actionType = best.type || 'unknown';
+          const logLine = `${moveCount + 1}. ${actorDisplay} ${actionType}`;
+          logEl.innerHTML += logLine + '\n';
+          logEl.scrollTop = logEl.scrollHeight;
+          moveCount++;
+          
+          // After applying action, wait for game state to update
+          // endTurn actions need more time since they trigger full turn logic
+          const delayTime = (best.type === 'endTurn') ? 600 : 150;
+          await new Promise(resolve => setTimeout(resolve, delayTime));
+          
+        } catch(e) {
+          statusEl.innerHTML = `<strong>✗ Exception:</strong> ${e.message}`;
+          console.error('AI vs AI error:', e);
+          aiVsAIRunning = false;
+          btnStart.style.display = 'inline-block';
+          btnPause.style.display = 'none';
+          return;
+        }
+      }
+
+      if(moveCount >= MAX_MOVES) {
+        statusEl.innerHTML = `<strong>⚠ Limit:</strong> Stopped at ${MAX_MOVES} moves`;
+      }
+
+      aiVsAIRunning = false;
+      btnStart.style.display = 'inline-block';
+      btnPause.style.display = 'none';
+    }
+
+    btnStart.addEventListener('click', async ()=> {
+      await runAIVsAI();
+    });
+
+    btnPause.addEventListener('click', ()=> {
+      aiVsAIPauseRequested = true;
+    });
+  });
+})();
+</script>
 </body>
 </html>

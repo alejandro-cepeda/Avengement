@@ -1571,6 +1571,26 @@ document.addEventListener('DOMContentLoaded', ()=>{
     // If there's a pending displacement, highlight adjacent empty tiles AFTER rendering
     if(activeAction === 'dragon-displace'){
       highlightAdjEmpty(pieces[dragonId].r, pieces[dragonId].c);
+      
+      // Auto-resolve dragon displacement: pick first available adjacent empty tile
+      setTimeout(() => {
+        if(activeAction === 'dragon-displace' && dragonDisplacingPiece){
+          const boss = pieces[dragonId];
+          const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+          for(const d of dirs){
+            const nr = boss.r + d[0], nc = boss.c + d[1];
+            if(inBounds(nr, nc) && grid[nr][nc] === null){
+              // Found an empty adjacent tile — simulate a click on it
+              const cell = boardEl.querySelector(`.cell[data-r="${nr}"][data-c="${nc}"]`);
+              if(cell) {
+                log(`Auto-relocating displaced piece to (${nr},${nc})`);
+                cell.click();
+              }
+              break;
+            }
+          }
+        }
+      }, 100);
     } 
   }
 
@@ -1780,6 +1800,167 @@ document.addEventListener('DOMContentLoaded', ()=>{
   function highlightAdjEnemiesShort(id){ clearHighlights(); const p = pieces[id]; const dirs=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]; for(const d of dirs){ const nr=p.r+d[0], nc=p.c+d[1]; if(inBounds(nr,nc) && grid[nr][nc] && pieces[grid[nr][nc]].player !== p.player) boardEl.querySelector(`.cell[data-r="${nr}"][data-c="${nc}"]`).classList.add('attack'); } }
 
   // expose debug
+  // Utility: create a deep-copy snapshot of the minimal game state for AI simulations
+  function snapshotState(){
+    const piecesCopy = {};
+    for(const id in pieces){
+      const p = pieces[id];
+      piecesCopy[id] = {
+        id: p.id,
+        player: p.player,
+        champion: p.champion,
+        currentHp: p.currentHp,
+        maxHp: p.maxHp,
+        r: p.r,
+        c: p.c,
+        rested: p.rested,
+        acted: p.acted,
+        move: p.move,
+        focused: p.focused,
+        lungingLocked: p.lungingLocked,
+        cooldowns: JSON.parse(JSON.stringify(p.cooldowns || {})),
+        buff: p.buff ? Object.assign({}, p.buff) : null
+      };
+    }
+    // shallow copy grid and player
+    const gridCopy = grid.map(row => row.slice());
+    const playerCopy = { ally: Object.assign({}, player.ally), enemy: Object.assign({}, player.enemy) };
+    const setupPlacedCopy = { ally: setupPlaced.ally.slice(), enemy: setupPlaced.enemy.slice() };
+    // Include interactive flags so AI can detect pending UI choices
+    const removedCopy = { ally: (removedChampions.ally||[]).slice(), enemy: (removedChampions.enemy||[]).slice() };
+    return { pieces: piecesCopy, grid: gridCopy, player: playerCopy, setupPlaced: setupPlacedCopy, dragonId, currentActor, activeAction, pendingRevival, thresholdRemovalPending, dragonDisplacingPiece, removedChampions: removedCopy };
+  }
+
+  // Enumerate simple legal actions for a given actor on a provided state snapshot
+  function enumerateActionsForState(state, actor){
+    const actions = [];
+    const localPieces = state.pieces;
+    const localGrid = state.grid;
+    const playerAp = (state.player && state.player[actor] && state.player[actor].ap) || 0;
+    function inBoundsSim(r,c){ return r>=0 && r<localGrid.length && c>=0 && c<localGrid[0].length; }
+    function isQueenAccessibleSim(fr,fc,tr,tc,maxDist){ const dR = tr-fr, dC = tc-fc; if(dR===0 && dC===0) return false; const dist = Math.max(Math.abs(dR), Math.abs(dC)); if(dist>maxDist) return false; if(dR===0||dC===0||Math.abs(dR)===Math.abs(dC)) return true; return false; }
+
+    for(const id in localPieces){
+      const p = localPieces[id];
+      if(p.player !== actor) continue;
+      if(p.rested || p.acted || p.lungingLocked) continue;
+      // Move actions (cost 1 AP) - only if AP available
+      if(playerAp >= 1){
+        const range = (p.move !== undefined) ? p.move : 1;
+        for(let r=0;r<localGrid.length;r++) for(let c=0;c<localGrid[0].length;c++){
+          if(localGrid[r][c] === null && isQueenAccessibleSim(p.r,p.c,r,c,range)){
+            actions.push({type:'move', actor, pieceId:id, to:{r,c}});
+          }
+        }
+      }
+      // Attack actions
+      const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+      if(p.champion === 'fighter'){
+        // Strike actions (cost 1 AP) - only if AP available
+        if(playerAp >= 1){
+          for(const d of dirs){ const nr=p.r+d[0], nc=p.c+d[1]; if(inBoundsSim(nr,nc) && localGrid[nr][nc]){ const tid = localGrid[nr][nc]; if(localPieces[tid] && localPieces[tid].player !== actor){
+              // no-displace strike
+              actions.push({type:'strike', actor, attacker:id, target:tid});
+              // displace options around the TARGET
+              for(const dd of dirs){ const dr = localPieces[tid].r + dd[0], dc = localPieces[tid].c + dd[1]; if(inBoundsSim(dr,dc) && localGrid[dr][dc] === null){ actions.push({type:'strike', actor, attacker:id, target:tid, displaceTo:{r:dr,c:dc}}); } }
+            } } }
+        }
+        // Lunging (cost 3 AP) - only if AP available
+        if(playerAp >= 3){
+          actions.push({type:'lunging', actor, attacker:id});
+        }
+      } else if(p.champion === 'ranger'){
+        // quick shot (cost 1 AP) - only if AP available
+        if(playerAp >= 1){
+          for(let r=0;r<localGrid.length;r++) for(let c=0;c<localGrid[0].length;c++){ if(localGrid[r][c] && localPieces[localGrid[r][c]] && localPieces[localGrid[r][c]].player !== actor){ if(isQueenAccessibleSim(p.r,p.c,r,c,3)) actions.push({type:'quick', actor, attacker:id, target: localGrid[r][c]}); } }
+        }
+        // Bullseye actions (cost variable AP up to available)
+        const maxSpend = Math.min(4, playerAp);
+        if(maxSpend >= 1){
+          for(let r=0;r<localGrid.length;r++) for(let c=0;c<localGrid[0].length;c++){ if(localGrid[r][c] && localPieces[localGrid[r][c]] && localPieces[localGrid[r][c]].player !== actor){ if(isQueenAccessibleSim(p.r,p.c,r,c,3)){ for(let s=1;s<=maxSpend;s++){ actions.push({type:'bullseye', actor, attacker:id, target: localGrid[r][c], spend:s}); } } } }
+        }
+      }
+      // Rest (always available)
+      actions.push({type:'rest', actor, pieceId:id});
+    }
+    // End turn is always a legal action
+    actions.push({type:'endTurn', actor});
+    return actions;
+  }
+
+  // Apply a simple action to the live game state (used by AI to execute chosen move)
+  function applyActionToLive(action){
+    if(!action) return false;
+    try{
+      if(action.type === 'move'){
+        const p = pieces[action.pieceId]; if(!p) return false; if(player[p.player].ap < 1) return false; player[p.player].ap -= 1; grid[p.r][p.c] = null; p.r = action.to.r; p.c = action.to.c; grid[p.r][p.c] = p.id; p.acted = true; render(); return true;
+      }
+      if(action.type === 'strike'){
+        const attacker = pieces[action.attacker]; const target = pieces[action.target]; if(!attacker || !target) return false; if(player[attacker.player].ap < 1) return false; player[attacker.player].ap -= 1; attacker.acted = true; applyDamage(attacker.id, target.id, 2);
+        // Optional displacement
+        if(action.displaceTo && pieces[target.id]){
+          const dr = action.displaceTo.r, dc = action.displaceTo.c;
+          if(inBounds(dr,dc) && grid[dr][dc] === null){ grid[target.r][target.c] = null; target.r = dr; target.c = dc; grid[dr][dc] = target.id; log(`${attacker.id} displaced ${target.id} to (${dr},${dc}) via Strength`); }
+        }
+        render(); return true;
+      }
+      if(action.type === 'quick'){
+        const attacker = pieces[action.attacker]; const target = pieces[action.target]; if(!attacker || !target) return false; if(player[attacker.player].ap < 1) return false; player[attacker.player].ap -= 1; attacker.acted = true; applyDamage(attacker.id, target.id, 1); render(); return true;
+      }
+      if(action.type === 'bullseye'){
+        const attacker = pieces[action.attacker]; const target = pieces[action.target]; const spend = Math.max(1, Math.min(action.spend||1, player[attacker.player].ap||0)); if(!attacker || !target) return false; if(player[attacker.player].ap < spend) return false; player[attacker.player].ap -= spend; attacker.acted = true; applyDamage(attacker.id, target.id, 2 * spend); if(attacker.cooldowns) attacker.cooldowns.bullseye = 1; render(); return true;
+      }
+      if(action.type === 'lunging'){
+        const attacker = pieces[action.attacker]; if(!attacker) return false; if(player[attacker.player].ap < 3) return false; player[attacker.player].ap -= 3; attacker.acted = true; attacker.lungingLocked = true; // lock for next turn
+        // Hit adjacent enemies for 2 dmg
+        const dirsLocal = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+        const adjIds = [];
+        for(const d of dirsLocal){ const nr=attacker.r+d[0], nc=attacker.c+d[1]; if(inBounds(nr,nc) && grid[nr][nc]) adjIds.push(grid[nr][nc]); }
+        adjIds.forEach(tid=>{ if(pieces[tid]){ applyDamage(attacker.id, tid, 2); } });
+        // Attempt auto-displace: for each hit target still alive, move to first adjacent empty
+        adjIds.forEach(tid=>{ const t = pieces[tid]; if(t){ for(const d of dirsLocal){ const tr = t.r + d[0], tc = t.c + d[1]; if(inBounds(tr,tc) && grid[tr][tc] === null){ grid[t.r][t.c] = null; t.r = tr; t.c = tc; grid[tr][tc] = t.id; log(`${attacker.id} (lunging) displaced ${t.id} to (${tr},${tc})`); break; } } } });
+        // Perform up to 3 free adjacent moves if possible (pick first empty each time)
+        for(let move=0; move<3; move++){ let moved=false; for(const d of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]){ const nr=attacker.r+d[0], nc=attacker.c+d[1]; if(inBounds(nr,nc) && grid[nr][nc] === null){ grid[attacker.r][attacker.c] = null; attacker.r = nr; attacker.c = nc; grid[nr][nc] = attacker.id; moved = true; break; } } if(!moved) break; }
+        render(); return true;
+      }
+      if(action.type === 'rest'){
+        const p = pieces[action.pieceId]; if(!p) return false; if(p.rested || p.acted) return false; p.rested = true; pendingRestRewards[p.id] = {ap:1, hp:1}; render(); return true;
+      }
+      if(action.type === 'endTurn'){
+        btnEndTurn.click(); return true;
+      }
+    } catch(e){ console.warn('applyActionToLive error', e); return false; }
+    return false;
+  }
+
+  // Expose AI-friendly API
+  window.GameAPI = {
+    snapshot: snapshotState,
+    enumerateActionsForState: enumerateActionsForState,
+    applyActionToLive: applyActionToLive,
+    // Choose a revival option (index into removedChampions[playerKey])
+    chooseRevival: function(playerKey, championIndex){
+      try{
+        if(!pendingRevival || !removedChampions[playerKey]) return false;
+        // If revival index out of range, clamp
+        const idx = Math.max(0, Math.min(championIndex|0, removedChampions[playerKey].length-1));
+        reviveChampion(playerKey, idx);
+        return true;
+      } catch(e){ console.warn('chooseRevival error', e); return false; }
+    },
+    // Choose a threshold removal by piece id (simulate clicking that cell)
+    chooseThresholdRemovalById: function(pieceId){
+      try{
+        if(!thresholdRemovalPending) return false;
+        const p = pieces[pieceId]; if(!p) return false;
+        const cell = boardEl.querySelector(`.cell[data-r="${p.r}"][data-c="${p.c}"]`);
+        if(!cell) return false;
+        cell.click();
+        return true;
+      } catch(e){ console.warn('chooseThresholdRemovalById error', e); return false; }
+    }
+  };
+
   window.__av2 = {pieces,grid,player,render};
 });
 })();
