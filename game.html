@@ -16,7 +16,7 @@
   .main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;gap:12px}
   h1{margin:0;font-size:18px}
   .board { display:grid; grid-template-columns:repeat(7,120px); grid-template-rows:repeat(7,120px); gap:var(--grid-gap); padding:12px; background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border-radius:12px; box-shadow:0 8px 28px rgba(0,0,0,0.6); }
-  .cell{ width:120px;height:120px;background:var(--cell);border-radius:8px;display:flex;align-items:center;justify-content:center;position:relative;user-select:none;cursor:pointer; transition:transform .08s; }
+  .cell{ width:120px;height:120px;background:var(--cell);border-radius:8px;display:flex;align-items:center;justify-content:center;position:relative;user-select:none;cursor:pointer; transition:transform .08s; border:1px solid rgba(255,255,255,0.15); }
   .cell:hover{ transform:translateY(-2px) }
   .cell.occupied{ cursor:pointer }
   .piece{ width:64px;height:64px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#041019;box-shadow:0 6px 18px rgba(0,0,0,0.6);position:relative;font-size:24px }
@@ -34,12 +34,13 @@
   .panel{ background:rgba(255,255,255,0.02); padding:12px; border-radius:8px; color:var(--muted); display:flex; flex-direction:column; gap:8px }
   .muted{ color:var(--muted); font-size:13px }
   button{ background:#0b2330; border:1px solid rgba(255,255,255,0.04); color:#eaf6ff; padding:8px 12px; border-radius:8px; cursor:pointer }
+  button:disabled{ opacity:0.4; cursor:not-allowed }
   .small{ padding:6px 8px; font-size:13px }
   .ability-btn{ display:block; width:100%; text-align:left; padding:8px; border-radius:8px; background:#071c2b; border:1px solid rgba(255,255,255,0.03); cursor:pointer; margin-bottom:6px }
   .ability-btn.active{ outline:2px solid rgba(102,217,255,0.12); background:linear-gradient(180deg,#092532,#071c2b) }
   input[type=number]{ width:72px; padding:6px; border-radius:6px; border:1px solid rgba(255,255,255,0.06); background:transparent; color:#eaf6ff }
   .log{ background:rgba(255,255,255,0.02); padding:10px; border-radius:8px; min-height:120px; overflow:auto; font-size:13px }
-  #rightSidebar{ width:360px; flex-shrink:0; padding:16px; background:#071522; border-left:1px solid rgba(255,255,255,0.03); display:flex; flex-direction:column; gap:12px; box-sizing:border-box; overflow-y:auto; }
+  #rightSidebar{ width:360px; flex-shrink:0; padding:16px; background:#071522; border-left:1px solid rgba(255,255,255,0.03); display:none; flex-direction:column; gap:12px; box-sizing:border-box; overflow-y:auto; }
 </style>
 </head>
 <body>
@@ -59,22 +60,22 @@
       </div>
 
       <div style="display:flex;gap:8px">
-        <button id="finishBtn" class="small" disabled>Finish Player 1</button>
+        <button id="finishBtn" class="small">Finish Player 1</button>
         <button id="resetBtn" class="small">Reset</button>
       </div>
 
       <hr>
 
       <div style="display:flex;justify-content:space-between">
-        <div><strong>Player 1 HP</strong><div id="hpAlly" class="muted">—</div></div>
-        <div><strong>AP</strong><div id="apAlly" class="muted">—</div></div>
+        <div><strong style="color:#66d9ff">🔵 P1 HP</strong><div id="hpAlly" class="muted">—</div></div>
+        <div><strong style="color:#66d9ff">AP</strong><div id="apAlly" class="muted">—</div></div>
       </div>
       <div style="display:flex;justify-content:space-between">
-        <div><strong>Player 2 HP</strong><div id="hpEnemy" class="muted">—</div></div>
-        <div><strong>AP</strong><div id="apEnemy" class="muted">—</div></div>
+        <div><strong style="color:#ff9b6b">🔴 P2 HP</strong><div id="hpEnemy" class="muted">—</div></div>
+        <div><strong style="color:#ff9b6b">AP</strong><div id="apEnemy" class="muted">—</div></div>
       </div>
-      <div style="display:flex;justify-content:space-between">
-        <div><strong style="color:#ffd166">Dragon HP</strong><div id="hpDragon" class="muted">—</div></div>
+      <div style="border-top:1px solid rgba(255,255,255,0.1);padding-top:8px;margin-top:8px;display:flex;justify-content:space-between;align-items:center">
+        <div><strong style="color:#ffd166">🐉 Dragon HP</strong><div id="hpDragon" class="muted" style="font-size:14px;font-weight:600">—</div></div>
       </div>
     </div>
 
@@ -129,80 +130,111 @@
   </main>
 
   <aside class="sidebar" id="rightSidebar">
-    <h1>Class Card</h1>
+    <h1>Game Setup</h1>
     <div class="panel" style="margin-top:8px">
-      <strong>Single AI Move</strong>
-      <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
-        <div style="display:flex;gap:8px;align-items:center">
-          <label class="muted" style="font-size:12px;flex:0 0 70px">Actor:</label>
-          <select id="aiActor" style="flex:1">
-            <option value="ally">🔵 Player 1 (Ally)</option>
-            <option value="enemy">🔴 Player 2 (Enemy)</option>
+      <strong>Opponent Mode</strong>
+      <div style="display:flex;flex-direction:column;gap:12px;margin-top:10px">
+        
+        <!-- Player 1 Setup -->
+        <div style="padding:10px;background:rgba(102,217,255,0.08);border-radius:6px;border-left:3px solid rgba(102,217,255,0.3)">
+          <div class="muted" style="font-size:11px;margin-bottom:8px;font-weight:bold">🔵 PLAYER 1</div>
+          <div style="display:flex;gap:8px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:0;flex:1">
+              <input type="radio" name="p1Type" value="human" checked style="margin:0;cursor:pointer"/>
+              <span class="muted" style="font-size:12px">Human</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:0;flex:1">
+              <input type="radio" name="p1Type" value="ai" style="margin:0;cursor:pointer"/>
+              <span class="muted" style="font-size:12px">AI</span>
+            </label>
+          </div>
+          <select id="p1Difficulty" style="width:100%;margin-top:8px;opacity:0.5;pointer-events:none;background:#333">
+            <option value="easy">🏹 Easy</option>
+            <option value="medium" selected>🧠 Medium</option>
           </select>
         </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <label class="muted" style="font-size:12px;flex:0 0 70px">Iterations:</label>
-          <input id="aiIterations" type="number" value="40" min="4" style="flex:1"/>
+
+        <!-- Player 2 Setup -->
+        <div style="padding:10px;background:rgba(255,155,107,0.08);border-radius:6px;border-left:3px solid rgba(255,155,107,0.3)">
+          <div class="muted" style="font-size:11px;margin-bottom:8px;font-weight:bold">🔴 PLAYER 2</div>
+          <div style="display:flex;gap:8px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:0;flex:1">
+              <input type="radio" name="p2Type" value="human" checked style="margin:0;cursor:pointer"/>
+              <span class="muted" style="font-size:12px">Human</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:0;flex:1">
+              <input type="radio" name="p2Type" value="ai" style="margin:0;cursor:pointer"/>
+              <span class="muted" style="font-size:12px">AI</span>
+            </label>
+          </div>
+          <select id="p2Difficulty" style="width:100%;margin-top:8px;opacity:0.5;pointer-events:none;background:#333">
+            <option value="easy">🏹 Easy</option>
+            <option value="medium" selected>🧠 Medium</option>
+          </select>
         </div>
-        <button id="btnAIMove" class="small" style="width:100%;background:#092532;border:1px solid rgba(102,217,255,0.2)">🎯 Suggest & Play</button>
+
+        <!-- AI Settings -->
+        <div style="padding:8px;background:rgba(255,255,255,0.02);border-radius:6px">
+          <div class="muted" style="font-size:11px;margin-bottom:6px">⚙️ AI SETTINGS</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <label class="muted" style="font-size:12px;flex:0 0 auto">Iterations:</label>
+            <input id="aiIterations" type="number" value="40" min="4" max="200" style="flex:1;padding:6px;border-radius:4px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:#eaf6ff"/>
+          </div>
+        </div>
+
       </div>
-      <div id="aiStatus" class="muted" style="margin-top:10px;font-size:12px;text-align:center">Ready</div>
+
+      <!-- Status & Start Button -->
+      <div id="setupStatus" class="muted" style="margin-top:12px;font-size:12px;text-align:center;line-height:1.4;min-height:40px">
+        Place pieces for both players first, then click Start
+      </div>
+      <button id="btnStartGame" class="small" style="width:100%;margin-top:10px;background:#0b3d0b;border:1px solid rgba(102,200,102,0.3);color:#66ff66;font-weight:bold;cursor:pointer" onclick="if(window.handleStartGameClick) window.handleStartGameClick()">▶ Start Game</button>
     </div>
 
-    <div class="panel" style="margin-top:8px">
-      <strong>AI Difficulties</strong>
-      <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
-        <div style="padding:8px;background:rgba(102,217,255,0.08);border-radius:6px;border-left:3px solid rgba(102,217,255,0.3)">
-          <div class="muted" style="font-size:11px;margin-bottom:4px">🔵 PLAYER 1</div>
-          <select id="aiDifficultyAlly" style="width:100%">
-            <option value="medium">🧠 Medium (MCTS) — Smart adaptive play</option>
-            <option value="easy">🏹 Easy (Rangers) — Bullseye focused</option>
-          </select>
+    <!-- Game State Panel (shown after Start) -->
+    <div id="gameStatePanel" class="panel" style="margin-top:8px;display:none">
+      <strong>Game State</strong>
+      <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span class="muted" style="font-size:12px">Turn:</span>
+          <strong id="gameTurn" style="color:#66d9ff">—</strong>
         </div>
-        <div style="padding:8px;background:rgba(255,155,107,0.08);border-radius:6px;border-left:3px solid rgba(255,155,107,0.3)">
-          <div class="muted" style="font-size:11px;margin-bottom:4px">🔴 PLAYER 2</div>
-          <select id="aiDifficultyEnemy" style="width:100%">
-            <option value="medium">🧠 Medium (MCTS) — Smart adaptive play</option>
-            <option value="easy">🏹 Easy (Rangers) — Bullseye focused</option>
-          </select>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span class="muted" style="font-size:12px">Phase:</span>
+          <strong id="gamePhase" style="color:#ffd166">—</strong>
+        </div>
+        <div style="border-top:1px solid rgba(255,255,255,0.1);padding-top:8px;margin-top:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <span class="muted" style="font-size:12px">🔵 P1 HP:</span>
+            <strong id="gameHPAlly" style="color:#66d9ff">—</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span class="muted" style="font-size:12px">🔵 P1 AP:</span>
+            <strong id="gameAPAlly" style="color:#66d9ff">—</strong>
+          </div>
+        </div>
+        <div style="border-top:1px solid rgba(255,255,255,0.1);padding-top:8px;margin-top:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <span class="muted" style="font-size:12px">🔴 P2 HP:</span>
+            <strong id="gameHPEnemy" style="color:#ff9b6b">—</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span class="muted" style="font-size:12px">🔴 P2 AP:</span>
+            <strong id="gameAPEnemy" style="color:#ff9b6b">—</strong>
+          </div>
+        </div>
+        <div style="border-top:1px solid rgba(255,255,255,0.1);padding-top:8px;margin-top:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span class="muted" style="font-size:12px">🐉 Dragon HP:</span>
+            <strong id="gameDragonHP" style="color:#ffd166">—</strong>
+          </div>
+        </div>
+        <div id="aiThinking" style="display:none;margin-top:8px;padding:8px;background:rgba(102,217,255,0.1);border-radius:4px;text-align:center;color:#66d9ff;font-size:12px">
+          🧠 AI is thinking...
         </div>
       </div>
+      <button id="btnEndGame" class="small" style="width:100%;margin-top:12px;background:#3d0b0b;border:1px solid rgba(200,102,102,0.3);color:#ff9999">⏹ End Game</button>
     </div>
-
-    <div class="panel" style="margin-top:8px">
-      <strong>AI vs AI Demo</strong>
-      <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
-        <div style="display:flex;gap:8px;align-items:center">
-          <label class="muted" style="font-size:12px;flex:0 0 70px">Iterations:</label>
-          <input id="aiVsAIIterations" type="number" value="20" min="4" style="flex:1"/>
-        </div>
-        <div style="display:flex;gap:6px">
-          <button id="btnAIVsAIStart" class="small" style="flex:1;background:#092532;border:1px solid rgba(102,217,255,0.2)">▶ Start Demo</button>
-          <button id="btnAIVsAIPause" class="small" style="flex:1;display:none;background:#ff6b6b;border:1px solid rgba(255,107,107,0.3)">⏸ Pause</button>
-        </div>
-      </div>
-      <div id="aiVsAIStatus" class="muted" style="margin-top:10px;font-size:12px;min-height:30px;line-height:1.4;text-align:center">Ready</div>
-      <div id="aiVsAILog" class="log" style="margin-top:8px;min-height:80px;max-height:120px;font-size:11px;overflow-y:auto;white-space:pre-wrap;word-break:break-word"></div>
-    </div>
-    <div id="cardContainer" style="display:flex;flex-direction:column;gap:12px">
-      <div class="panel" style="text-align:center">
-        <div id="cardTitle" class="muted" style="font-size:14px">Select a piece to view details</div>
-        <div id="cardImage" style="width:100%;height:160px;background:rgba(255,255,255,0.04);border-radius:8px;margin:12px 0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px">[Class Image Placeholder]</div>
-        <div id="cardStats" style="display:none;gap:8px">
-          <div style="display:flex;justify-content:space-between">
-            <span>HP:</span>
-            <strong id="cardHP">—</strong>
-          </div>
-          <div style="display:flex;justify-content:space-between">
-            <span>Move:</span>
-            <strong id="cardMove">—</strong>
-          </div>
-          <div style="display:flex;justify-content:space-between">
-            <span>State:</span>
-            <strong id="cardState">—</strong>
-          </div>
-        </div>
-      </div>
       <div class="panel">
         <div id="cardAbilities" style="font-size:13px;color:var(--muted);line-height:1.6">
           <div style="margin-bottom:8px"><strong>Abilities:</strong></div>
@@ -244,30 +276,149 @@
 <script src="scripts/game/champions/bossDragon.js"></script>
 <script src="scripts/game/utils.js"></script>
 <script src="scripts/game/app.js"></script>
+<script src="scripts/ui/aiManager.js"></script>
+<!-- <script src="scripts/ui/gameStateManager.js"></script> -->
 <script>
-// Minimal Monte-Carlo evaluator that uses GameAPI to simulate actions and apply the best one.
+// Reset game state - called when End Game button is clicked
+window.resetGame = function(){
+  const finishBtn = document.getElementById('finishBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  if(finishBtn) finishBtn.style.display = 'block';
+  if(resetBtn) resetBtn.style.display = 'block';
+  if(resetBtn) resetBtn.click();
+  if(window.updateSetupStatus) window.updateSetupStatus();
+}
+</script>
+<script>
+// Monte-Carlo Tree Search (MCTS) AI with proper UCB1 algorithm for exploration/exploitation balance
 (() => {
   function deepClone(obj){ return JSON.parse(JSON.stringify(obj)); }
 
+  // MCTS Node class: tracks visits and value sum for UCB1 calculation with RAVE support
+  class MCTSNode {
+    constructor(action = null, parent = null, stateHash = null) {
+      this.action = action;           // the action that led to this node
+      this.parent = parent;            // parent node for backpropagation
+      this.children = [];              // child nodes for each possible action
+      this.visits = 0;                 // number of times this node was visited
+      this.valueSum = 0;               // sum of all playout scores from this node
+      this.isFullyExpanded = false;    // all children have been generated
+      this.untriedActions = [];        // actions that haven't been explored yet
+      this.stateHash = stateHash;      // hash of board state for transposition table
+      // RAVE (Rapid Action Value Estimation) tracking
+      this.raveVisits = 0;             // visits where action appeared in playout
+      this.raveValueSum = 0;           // sum of scores from those playouts
+    }
+
+    // Get RAVE value estimate
+    getRaveValue() {
+      return this.raveVisits === 0 ? 0 : this.raveValueSum / this.raveVisits;
+    }
+
+    // Blend regular value with RAVE value using beta function
+    getBlendedValue() {
+      const visits = Math.max(1, this.visits);
+      const raveVisits = Math.max(1, this.raveVisits);
+      // Beta function: more weight on RAVE early (few visits), more on regular value later
+      const weight = 1 / (1 + visits / (3 * raveVisits));  // 3x scaling factor
+      
+      const regularValue = visits === 0 ? 0 : this.valueSum / visits;
+      const raveValue = this.getRaveValue();
+      return (1 - weight) * regularValue + weight * raveValue;
+    }
+
+    // Upper Confidence Bound (UCB1) for balancing exploration vs exploitation
+    ucb1(c = Math.sqrt(2)) {
+      if (this.visits === 0) return Infinity; // unvisited nodes have highest priority
+      const exploitation = this.getBlendedValue();  // Use blended RAVE+regular value
+      const exploration = c * Math.sqrt(Math.log(this.parent.visits) / this.visits);
+      return exploitation + exploration;
+    }
+
+    // Select best child using UCB1
+    selectBestChild() {
+      let best = null;
+      let bestUcb = -Infinity;
+      for (const child of this.children) {
+        const ucb = child.ucb1();
+        if (ucb > bestUcb) {
+          bestUcb = ucb;
+          best = child;
+        }
+      }
+      return best;
+    }
+
+    // Average value from this node
+    getAverageValue() {
+      return this.visits === 0 ? 0 : this.valueSum / this.visits;
+    }
+
+    // Get max number of children (progressive widening)
+    getMaxChildren() {
+      // Early: only explore 2-4 actions, gradually expand to 12
+      return Math.min(2 + Math.floor(this.visits / 8), 12);
+    }
+  }
+
   function scoreStateForActor(state, actor){
     const opponent = actor === 'ally' ? 'enemy' : 'ally';
-    const myHp = (state.player && state.player[actor] && state.player[actor].hpCurrent) || 0;
-    const oppHp = (state.player && state.player[opponent] && state.player[opponent].hpCurrent) || 0;
-    const myPieces = Object.values(state.pieces).filter(p=>p.player===actor).length;
-    const oppPieces = Object.values(state.pieces).filter(p=>p.player===opponent).length;
-    const myTotalHp = Object.values(state.pieces).filter(p=>p.player===actor).reduce((sum,p)=>(sum + (p.currentHp||0)), 0);
-    const oppTotalHp = Object.values(state.pieces).filter(p=>p.player===opponent).reduce((sum,p)=>(sum + (p.currentHp||0)), 0);
+    const myPieces = Object.values(state.pieces).filter(p=>p.player===actor);
+    const oppPieces = Object.values(state.pieces).filter(p=>p.player===opponent);
+    const myPieceCount = myPieces.length;
+    const oppPieceCount = oppPieces.length;
     
-    // Primary objective: eliminate all enemy pieces (huge bonus for piece elimination)
-    const pieceDiff = myPieces - oppPieces;
+    const myTotalHp = myPieces.reduce((sum,p)=>(sum + (p.currentHp||0)), 0);
+    const oppTotalHp = oppPieces.reduce((sum,p)=>(sum + (p.currentHp||0)), 0);
     
-    // Secondary objectives: maximize own piece count and health
+    // Primary objective: piece count difference (most important)
+    const pieceDiff = myPieceCount - oppPieceCount;
+    
+    // Secondary: total health difference (relative advantage)
+    const healthDiff = myTotalHp - oppTotalHp;
+    
+    // NEW: Mobility factor - pieces with more movement options are stronger
+    let avgMyMobility = 0;
+    if (myPieceCount > 0) {
+      const totalMobility = myPieces.reduce((sum, p) => {
+        const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+        const moveOptions = dirs.filter(([dr,dc]) => {
+          const nr = p.r + dr, nc = p.c + dc;
+          return nr >= 0 && nr < 7 && nc >= 0 && nc < 7 && state.grid[nr][nc] === null;
+        }).length;
+        return sum + moveOptions;
+      }, 0);
+      avgMyMobility = totalMobility / myPieceCount;
+    }
+    
+    let avgOppMobility = 0;
+    if (oppPieceCount > 0) {
+      const totalMobility = oppPieces.reduce((sum, p) => {
+        const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+        const moveOptions = dirs.filter(([dr,dc]) => {
+          const nr = p.r + dr, nc = p.c + dc;
+          return nr >= 0 && nr < 7 && nc >= 0 && nc < 7 && state.grid[nr][nc] === null;
+        }).length;
+        return sum + moveOptions;
+      }, 0);
+      avgOppMobility = totalMobility / oppPieceCount;
+    }
+    const mobilityDiff = avgMyMobility - avgOppMobility;
+    
+    // NEW: Centering bonus - pieces near center more flexible
+    const getDistFromCenter = (r, c) => Math.sqrt((r - 3) ** 2 + (c - 3) ** 2);
+    const myCenterBonus = myPieces.reduce((sum, p) => sum - getDistFromCenter(p.r, p.c), 0);
+    const oppCenterBonus = oppPieces.reduce((sum, p) => sum - getDistFromCenter(p.r, p.c), 0);
+    const centerDiff = myCenterBonus - oppCenterBonus;
+    
+    // Scoring formula: emphasize piece elimination, health, mobility, and positioning
     const score = 
-      pieceDiff * 100 +           // piece elimination is the main goal
-      oppTotalHp * (-5) +         // heavily penalize leaving enemies alive
-      myTotalHp * 1 +             // slight bonus for keeping own pieces healthy
-      (myHp - oppHp) * 0.5 +      // minor player HP difference
-      (myPieces > 0 ? 10 : -500); // massive penalty for losing all pieces
+      pieceDiff * 1000 +              // piece elimination is paramount (1000x weight)
+      healthDiff * 10 +               // health advantage matters (10x weight)
+      mobilityDiff * 5 +              // movement options are valuable (5x weight)
+      centerDiff * 2 +                // board control via centering (2x weight)
+      (myPieceCount > 0 ? 50 : -10000) +  // massive penalty for losing all pieces
+      (oppPieceCount === 0 ? 10000 : 0);  // huge bonus for eliminating all enemy pieces
     
     return score;
   }
@@ -312,7 +463,14 @@
       return;
     }
     if(action.type === 'bullseye'){
-      const attacker = state.pieces[action.attacker]; const target = state.pieces[action.target]; if(!attacker || !target) return; const spend = Math.max(1, Math.min(action.spend||1, (state.player && state.player[attacker.player] && state.player[attacker.player].ap) || 0)); if(attacker.player && attacker.player !== 'boss' && state.player && state.player[attacker.player]) state.player[attacker.player].ap = Math.max(0, (state.player[attacker.player]&&state.player[attacker.player].ap) - spend); target.currentHp = (target.currentHp || target.maxHp) - (2 * spend); if(target.player !== 'boss' && state.player && state.player[target.player]) state.player[target.player].hpCurrent = Math.max(0, state.player[target.player].hpCurrent - (2 * spend)); if(target.currentHp <= 0){ state.grid[target.r][target.c] = null; delete state.pieces[target.id]; state.setupPlaced[target.player] = state.setupPlaced[target.player].filter(x=>x!==target.id); } return; }
+      const attacker = state.pieces[action.attacker]; const target = state.pieces[action.target]; if(!attacker || !target) return; 
+      const spend = Math.max(1, Math.min(action.spend||1, (state.player && state.player[attacker.player] && state.player[attacker.player].ap) || 0)); 
+      if(attacker.player && attacker.player !== 'boss' && state.player && state.player[attacker.player]) state.player[attacker.player].ap = Math.max(0, (state.player[attacker.player]&&state.player[attacker.player].ap) - spend); 
+      target.currentHp = (target.currentHp || target.maxHp) - (2 * spend); 
+      if(target.player !== 'boss' && state.player && state.player[target.player]) state.player[target.player].hpCurrent = Math.max(0, state.player[target.player].hpCurrent - (2 * spend)); 
+      if(target.currentHp <= 0){ state.grid[target.r][target.c] = null; delete state.pieces[target.id]; state.setupPlaced[target.player] = state.setupPlaced[target.player].filter(x=>x!==target.id); } 
+      return; 
+    }
     if(action.type === 'lunging'){
       const attacker = state.pieces[action.attacker]; if(!attacker) return; if(state.player && state.player[attacker.player]) state.player[attacker.player].ap = Math.max(0, state.player[attacker.player].ap - 3);
       // Hit adjacent for 2 dmg
@@ -363,150 +521,371 @@
     }
   }
 
-  function monteCarloEvaluateAction(rootState, action, actor, playouts){
-    let total = 0;
-    for(let i=0;i<playouts;i++){
-      const s = deepClone(rootState);
-      // apply chosen action
-      applyActionToState(s, action);
-      // random playout with preference for offensive actions
-      let depth = 0; const MAX_DEPTH = 12;
-      while(depth < MAX_DEPTH){
-        // terminal if one side has no pieces
-        const allyCount = Object.values(s.pieces).filter(p=>p.player==='ally').length;
-        const enemyCount = Object.values(s.pieces).filter(p=>p.player==='enemy').length;
-        if(allyCount===0 || enemyCount===0) break;
-        // pick legal action for the current actor, with bias toward offensive moves
-        const current = s.currentActor || actor;
-        const actions = window.GameAPI.enumerateActionsForState(s, current);
-        if(!actions || actions.length===0) break;
-        
-        // Categorize actions: attacks (strike, quick, bullseye, lunging) vs other
-        const attackActions = actions.filter(a => ['strike','quick','bullseye','lunging'].includes(a.type));
-        const otherActions = actions.filter(a => !['strike','quick','bullseye','lunging'].includes(a.type));
-        
-        // Select action: 70% chance to pick an attack if available, 30% pick randomly
-        let selectedAction;
-        if(attackActions.length > 0 && Math.random() < 0.7){
-          selectedAction = attackActions[Math.floor(Math.random()*attackActions.length)];
-        } else {
-          selectedAction = actions[Math.floor(Math.random()*actions.length)];
-        }
-        
-        applyActionToState(s, selectedAction);
-        depth++;
-      }
-      total += scoreStateForActor(s, actor);
+  // Global AI configuration (set when "Start Game" is clicked)
+  let gameConfig = {
+    p1IsAI: false,
+    p1Difficulty: 'medium',
+    p2IsAI: false,
+    p2Difficulty: 'medium',
+    iterations: 40
+  };
+
+  // Simple zobrist-style hash for transposition table
+  function hashBoardState(state) {
+    let hash = 0;
+    for (const id in state.pieces) {
+      const p = state.pieces[id];
+      hash = ((hash << 5) - hash) + (p.r * 7 + p.c);
+      hash = hash & hash; // Convert to 32-bit int
     }
-    return total / Math.max(1, playouts);
+    return hash >>> 0; // Ensure positive
   }
 
-  async function findBestAction(iterations, actor){
-    const root = window.GameAPI.snapshot();
-    // ensure currentActor is set
-    if(!root.currentActor) root.currentActor = actor;
+  // Alpha-beta style fast evaluation: skip obviously bad moves
+  function getFastEvaluation(actions, actor, state) {
+    if (actions.length <= 2) return actions;  // Keep small sets
     
-    // Skip dragon turns — the AI only controls ally and enemy players
-    if(root.currentActor === 'boss') return null;
+    const scored = actions.map(a => {
+      let badnessScore = 0;
+      const testState = deepClone(state);
+      applyActionToState(testState, a);
+      
+      // Penalty: loses a piece for free
+      const pieceLoss = Object.values(state.pieces).filter(p => p.player === actor).length -
+                        Object.values(testState.pieces).filter(p => p.player === actor).length;
+      if (pieceLoss > 0) badnessScore += pieceLoss * 100;
+      
+      // Bonus: eliminates enemy
+      const enemyLoss = Object.values(state.pieces).filter(p => p.player !== actor && p.player !== 'boss').length -
+                        Object.values(testState.pieces).filter(p => p.player !== actor && p.player !== 'boss').length;
+      badnessScore -= enemyLoss * 150;
+      
+      return { action: a, score: badnessScore };
+    });
     
-    const actions = window.GameAPI.enumerateActionsForState(root, actor);
-    if(!actions || actions.length===0) return null;
-    const perAction = Math.max(1, Math.floor(iterations / actions.length));
+    // Sort by goodness, keep top 60% (minimum 2)
+    scored.sort((a, b) => a.score - b.score);
+    const keepCount = Math.max(2, Math.ceil(actions.length * 0.6));
+    return scored.slice(0, keepCount).map(s => s.action);
+  }
+
+  // Proper MCTS playout: random but with preference for offensive moves
+  // Evaluates state OBJECTIVELY from perspective of initial actor
+  function playoutFromState(state, evaluateForActor, maxDepth = 12) {
+    let depth = 0;
+    const s = deepClone(state);
+    let currentActor = state.currentActor;
     
-    // Count how many pieces of this actor have already acted
-    const playerPieces = Object.values(root.pieces).filter(p=>p.player===actor);
-    const actedCount = playerPieces.filter(p=>p.acted || p.rested).length;
-    const mostPiecesActed = actedCount >= playerPieces.length * 0.7; // 70%+ have acted
+    while(depth < maxDepth){
+      const allyCount = Object.values(s.pieces).filter(p=>p.player==='ally').length;
+      const enemyCount = Object.values(s.pieces).filter(p=>p.player==='enemy').length;
+      
+      // Terminal condition: one side eliminated
+      if(allyCount===0 || enemyCount===0) break;
+      
+      const actions = window.GameAPI.enumerateActionsForState(s, currentActor);
+      if(!actions || actions.length===0) break;
+      
+      // Bias towards offensive actions: 60% attack, 40% other
+      const attackActions = actions.filter(a => ['strike','quick','bullseye','lunging'].includes(a.type));
+      const otherActions = actions.filter(a => !['strike','quick','bullseye','lunging'].includes(a.type));
+      
+      let selectedAction;
+      if(attackActions.length > 0 && Math.random() < 0.6){
+        // Prefer attacks that target enemies
+        selectedAction = attackActions[Math.floor(Math.random() * attackActions.length)];
+      } else if(otherActions.length > 0){
+        selectedAction = otherActions[Math.floor(Math.random() * otherActions.length)];
+      } else {
+        selectedAction = actions[Math.floor(Math.random() * actions.length)];
+      }
+      
+      applyActionToState(s, selectedAction);
+      currentActor = s.currentActor; // advance to next actor
+      depth++;
+    }
     
-    let best = null; let bestScore = -Infinity;
-    for(const a of actions){
-      let avg = monteCarloEvaluateAction(root, a, actor, perAction);
-      // Bonus for endTurn action if most pieces have already acted (encourages turn ending)
-      if(a.type === 'endTurn' && mostPiecesActed) avg += 50;
-      // console.log('Action', a, 'score', avg);
-      if(avg > bestScore){ bestScore = avg; best = a; }
+    // Score from perspective of evaluateForActor (not whose turn it is)
+    return scoreStateForActor(s, evaluateForActor);
+  }
+
+  // MCTS Tree Search: builds tree of promising actions with proper UCB1 selection
+  // Includes progressive widening, killer moves, RAVE, transposition table, and alpha-beta pruning
+  async function monteCarloTreeSearch(rootState, actor, timeLimit = 1000, maxIterations = 100) {
+    const root = new MCTSNode(null, null, hashBoardState(rootState));
+    root.parent = root; // root's parent is itself for backprop termination
+    root.visits = 0; // will be incremented during backprop
+    
+    // Transposition table for caching node evaluations
+    const transpositionTable = new Map();
+    
+    // Killer moves: depth -> [good moves found at this depth]
+    const killerMoves = {};
+    let depthTracker = new Map();  // node -> depth from root
+    depthTracker.set(root, 0);
+    
+    const startTime = Date.now();
+    let iteration = 0;
+    
+    while(iteration < maxIterations && (Date.now() - startTime) < timeLimit) {
+      let node = root;
+      const s = deepClone(rootState);
+      let currentActor = rootState.currentActor || actor;
+      let depth = 0;
+      
+      // SELECTION: traverse tree using UCB1 until we find a non-terminal node
+      while(node.children.length > 0 && node.isFullyExpanded){
+        node = node.selectBestChild();
+        applyActionToState(s, node.action);
+        currentActor = s.currentActor;
+        depth++;
+        depthTracker.set(node, depth);
+      }
+      
+      // EXPANSION: add a new child node if we haven't explored all actions
+      let childNode = node;
+      if(!node.isFullyExpanded){
+        // Generate legal actions for this state
+        if(node.untriedActions.length === 0){
+          let actions = window.GameAPI.enumerateActionsForState(s, currentActor) || [];
+          // Alpha-beta pruning: filter out obviously bad moves
+          if (actions.length > 8) {
+            actions = getFastEvaluation(actions, currentActor, s);
+          }
+          node.untriedActions = actions;
+        }
+        
+        // Progressive widening: only expand up to getMaxChildren() children
+        if(node.children.length < node.getMaxChildren() && node.untriedActions.length > 0){
+          const idx = Math.floor(Math.random() * node.untriedActions.length);
+          const action = node.untriedActions.splice(idx, 1)[0];
+          
+          // Mark node as fully expanded if we've reached max children capacity
+          if(node.children.length >= node.getMaxChildren() - 1 && node.untriedActions.length === 0){
+            node.isFullyExpanded = true;
+          }
+          
+          // Create and add child node
+          childNode = new MCTSNode(action, node, hashBoardState(s));
+          node.children.push(childNode);
+          depthTracker.set(childNode, depth + 1);
+          
+          // Apply action to state for playout
+          applyActionToState(s, action);
+          
+          // Track this move as killer move at this depth
+          if (!killerMoves[depth]) killerMoves[depth] = [];
+          // Will add to killers after backprop if it scores well
+        } else if(node.untriedActions.length === 0) {
+          node.isFullyExpanded = true;
+        }
+      }
+      
+      // SIMULATION: run random playout from this position
+      const score = playoutFromState(s, actor);
+      
+      // BACKPROPAGATION: update all ancestors with result and RAVE statistics
+      let current = childNode;
+      let backpropDepth = depth;
+      while(current.parent !== current){ // stop when parent is self (root)
+        current.visits++;
+        current.valueSum += score;
+        
+        // Update RAVE statistics: this action appeared in a playout
+        if (current.action) {
+          current.raveVisits++;
+          current.raveValueSum += score;
+        }
+        
+        // Track killer moves: if this move scored well, remember it
+        if (score > 0) {
+          if (!killerMoves[backpropDepth]) killerMoves[backpropDepth] = [];
+          // Keep only unique killer moves (by type and targets)
+          const actionKey = `${current.action.type}-${current.action.attacker || current.action.pieceId}-${current.action.target || ''}`;
+          if (!killerMoves[backpropDepth].some(a => {
+            const key = `${a.type}-${a.attacker || a.pieceId}-${a.target || ''}`;
+            return key === actionKey;
+          })) {
+            killerMoves[backpropDepth].push(current.action);
+            // Keep max 3 killer moves per depth
+            if (killerMoves[backpropDepth].length > 3) {
+              killerMoves[backpropDepth].shift();
+            }
+          }
+        }
+        
+        current = current.parent;
+        backpropDepth--;
+      }
+      // Update root as well
+      current.visits++;
+      current.valueSum += score;
+      
+      iteration++;
+      
+      // Yield control to prevent blocking
+      await new Promise(r => setTimeout(r, 0));
+    }
+    
+    // Return the best action: balance between visited (explored) and valuable (high average)
+    // Use robust child (most visited) since it's more statistically reliable
+    let best = null;
+    let bestScore = -Infinity;
+    for(const child of root.children){
+      // Combine visit count (exploration) with blended value (RAVE+regular) (exploitation)
+      const visits = Math.max(1, child.visits);
+      const blendedValue = child.getBlendedValue();
+      const robustnessScore = visits + blendedValue * 10; // 10x weight for value
+      
+      if(robustnessScore > bestScore){
+        bestScore = robustnessScore;
+        best = child.action;
+      }
     }
     return best;
   }
 
-  // Easy AI: simple heuristic that prefers rangers and bullseye-focused play
+  // Easy AI: simple ranger-focused strategy
   async function findBestActionEasy(iterations, actor){
     const root = window.GameAPI.snapshot();
     if(!root.currentActor) root.currentActor = actor;
     if(root.currentActor === 'boss') return null;
+    
     const actions = window.GameAPI.enumerateActionsForState(root, actor) || [];
     if(actions.length === 0) return null;
 
-    // helper to get piece by action
-    const getActorPiece = (a) => { const id = a.attacker || a.pieceId || a.attacker; return root.pieces && root.pieces[id]; };
+    // Helper to get the piece doing the action
+    const getPiece = (a) => {
+      let id = a.attacker || a.pieceId;
+      return root.pieces && root.pieces[id];
+    };
 
-    // Filter actions that originate from ranger pieces
+    // Filter for ranger-originating actions
     const rangerActions = actions.filter(a => {
-      const p = getActorPiece(a);
-      return p && (p.champion === 'ranger' || (p.name && String(p.name).toLowerCase().includes('ranger')));
+      const p = getPiece(a);
+      return p && p.champion === 'ranger';
     });
 
-    // If we have ranger actions, prioritize bullseye attacks from rangers
-    if(rangerActions.length > 0){
-      const bullActions = rangerActions.filter(a => a.type === 'bullseye');
-      const ap = (root.player && root.player[actor] && root.player[actor].ap) || 0;
-
-      if(bullActions.length > 0){
-        // Prefer bull actions we can afford (or the smallest spend if none affordable)
-        const affordable = bullActions.filter(a => (typeof a.spend === 'undefined') || (a.spend <= ap));
-        const pool = affordable.length > 0 ? affordable : bullActions.slice();
-
-        // Choose bull action that targets the nearest enemy
-        let best = null; let bestDist = Infinity;
-        for(const a of pool){
-          const atk = getActorPiece(a);
-          const tgt = root.pieces && root.pieces[a.target];
-          if(atk && tgt){
-            const d = Math.abs(atk.r - tgt.r) + Math.abs(atk.c - tgt.c);
-            if(d < bestDist){ bestDist = d; best = a; }
-          } else if(!a.target && !best){ best = a; }
-        }
-        if(best) return best;
-      }
-
-      // Otherwise pick strike/quick targeting nearest enemy
-      const attackCandidates = rangerActions.filter(a => ['strike','quick','lunging','bullseye'].includes(a.type));
-      if(attackCandidates.length > 0){
-        let best = null; let bestD = Infinity;
-        for(const a of attackCandidates){
-          const atk = getActorPiece(a);
-          const tgt = root.pieces && root.pieces[a.target];
-          if(atk && tgt){
-            const d = Math.abs(atk.r - tgt.r) + Math.abs(atk.c - tgt.c);
-            if(d < bestD){ bestD = d; best = a; }
-          }
-        }
-        if(best) return best;
-      }
-
-      // If no immediate attack, try moves that get rangers closer to enemies
-      const moveActions = rangerActions.filter(a => a.type === 'move' && a.to);
-      if(moveActions.length > 0){
-        let best = null; let bestScore = -Infinity;
-        const enemies = Object.values(root.pieces).filter(p => p.player && p.player !== actor && p.player !== 'boss');
-        for(const a of moveActions){
-          const atk = root.pieces && root.pieces[a.pieceId]; if(!atk) continue;
-          let minBefore = Infinity, minAfter = Infinity;
-          for(const e of enemies){ const db = Math.abs(atk.r - e.r) + Math.abs(atk.c - e.c); const da = Math.abs(a.to.r - e.r) + Math.abs(a.to.c - e.c); minBefore = Math.min(minBefore, db); minAfter = Math.min(minAfter, da); }
-          const score = (minBefore - minAfter);
-          if(score > bestScore){ bestScore = score; best = a; }
-        }
-        if(best) return best;
-      }
+    if(rangerActions.length === 0){
+      // No ranger actions available, pick random action
+      return actions[Math.floor(Math.random() * actions.length)];
     }
 
-    // Fallback: if no ranger-focused option, use medium MCTS
-    return await findBestAction(iterations, actor);
+    // Prioritize bullseye actions
+    const bullActions = rangerActions.filter(a => a.type === 'bullseye');
+    const ap = (root.player && root.player[actor] && root.player[actor].ap) || 0;
+
+    if(bullActions.length > 0){
+      // Filter for affordable bullseye
+      const affordable = bullActions.filter(a => !a.spend || a.spend <= ap);
+      const candidates = affordable.length > 0 ? affordable : bullActions;
+      
+      // Pick bullseye targeting nearest enemy
+      let best = null;
+      let bestDist = Infinity;
+      for(const a of candidates){
+        const attacker = getPiece(a);
+        const target = root.pieces[a.target];
+        if(attacker && target){
+          const dist = Math.abs(attacker.r - target.r) + Math.abs(attacker.c - target.c);
+          if(dist < bestDist){
+            bestDist = dist;
+            best = a;
+          }
+        }
+      }
+      if(best) return best;
+    }
+
+    // Otherwise, pick ranger strike/quick targeting nearest enemy
+    const strikeActions = rangerActions.filter(a => ['strike','quick'].includes(a.type));
+    if(strikeActions.length > 0){
+      let best = null;
+      let bestDist = Infinity;
+      for(const a of strikeActions){
+        const attacker = getPiece(a);
+        const target = root.pieces[a.target];
+        if(attacker && target){
+          const dist = Math.abs(attacker.r - target.r) + Math.abs(attacker.c - target.c);
+          if(dist < bestDist){
+            bestDist = dist;
+            best = a;
+          }
+        }
+      }
+      if(best) return best;
+    }
+
+    // Move rangers closer to enemies
+    const moveActions = rangerActions.filter(a => a.type === 'move');
+    if(moveActions.length > 0){
+      const enemies = Object.values(root.pieces).filter(p => p.player !== actor && p.player !== 'boss');
+      let best = null;
+      let bestImprovement = -Infinity;
+      
+      for(const a of moveActions){
+        const ranger = root.pieces[a.pieceId];
+        if(!ranger) continue;
+        
+        let minBefore = Infinity;
+        for(const e of enemies){
+          const d = Math.abs(ranger.r - e.r) + Math.abs(ranger.c - e.c);
+          minBefore = Math.min(minBefore, d);
+        }
+        
+        let minAfter = Infinity;
+        for(const e of enemies){
+          const d = Math.abs(a.to.r - e.r) + Math.abs(a.to.c - e.c);
+          minAfter = Math.min(minAfter, d);
+        }
+        
+        const improvement = minBefore - minAfter;
+        if(improvement > bestImprovement){
+          bestImprovement = improvement;
+          best = a;
+        }
+      }
+      if(best) return best;
+    }
+
+    // Default: return any ranger action
+    return rangerActions[Math.floor(Math.random() * rangerActions.length)];
   }
 
+  // Adaptive time management based on game state
+  function calculateAdaptiveTimeLimit(baseIterations, gameState, actor) {
+    const opponent = actor === 'ally' ? 'enemy' : 'ally';
+    const myPieces = Object.values(gameState.pieces).filter(p => p.player === actor).length;
+    const oppPieces = Object.values(gameState.pieces).filter(p => p.player === opponent).length;
+    
+    // Endgame (1-2 pieces): use more time (clearer, fewer decisions, more critical)
+    if (myPieces <= 2) {
+      return Math.max(2000, baseIterations * 100);  // 4-5 seconds, more iterations
+    }
+    
+    // Late game (exactly 2-3 pieces on both sides): moderate time
+    if (myPieces === 2 && oppPieces === 2) {
+      return baseIterations * 70;  // ~3.5 seconds
+    }
+    
+    // Early game (all pieces present): less time (game tree is huge)
+    if (myPieces >= 3 && oppPieces >= 3) {
+      return baseIterations * 40;  // ~2 seconds, faster play
+    }
+    
+    // Default mid-game
+    return baseIterations * 50;  // ~2.5 seconds
+  }
+
+  // Main difficulty selection function
   async function findBestActionForDifficulty(iterations, actor, difficulty){
-    if(difficulty === 'easy') return await findBestActionEasy(iterations, actor);
-    return await findBestAction(iterations, actor);
+    if(difficulty === 'easy'){
+      return await findBestActionEasy(iterations, actor);
+    }
+    // Medium/default: use MCTS with adaptive time limit
+    const gameState = window.GameAPI.snapshot();
+    const timeLimit = calculateAdaptiveTimeLimit(iterations, gameState, actor);
+    return await monteCarloTreeSearch({...gameState}, actor, timeLimit, iterations);
   }
 
   // Build HTML fragment (no <html> wrapper) for inserting into modal
@@ -577,188 +956,8 @@
     }catch(e){ alert('Failed to open modal: '+e.message); console.warn(e); }
   }
 
-  document.addEventListener('DOMContentLoaded', ()=>{
-    const btn = document.getElementById('btnAIMove');
-    const status = document.getElementById('aiStatus');
-    btn.addEventListener('click', async ()=>{
-      const actor = document.getElementById('aiActor').value;
-      const iter = parseInt(document.getElementById('aiIterations').value,10) || 20;
-      const difficulty = (actor === 'ally') ? document.getElementById('aiDifficultyAlly').value : document.getElementById('aiDifficultyEnemy').value;
-      status.textContent = 'Computing...';
-      try{
-        const best = await findBestActionForDifficulty(iter, actor, difficulty);
-        if(!best){ status.textContent = 'No legal action found.'; return; }
-        status.textContent = 'Applying: ' + JSON.stringify(best);
-        // Apply to live game
-        const ok = window.GameAPI.applyActionToLive(best);
-        if(!ok) status.textContent = 'AI attempted action but it failed to apply.';
-        else status.textContent = 'Action applied.';
-      } catch(e){ status.textContent = 'Error: '+e.message; console.error(e); }
-      setTimeout(()=>{ status.textContent = 'Ready'; }, 1200);
-    });
-
-    // AI vs AI auto-play demo
-    let aiVsAIRunning = false;
-    let aiVsAIPauseRequested = false;
-    const btnStart = document.getElementById('btnAIVsAIStart');
-    const btnPause = document.getElementById('btnAIVsAIPause');
-    const statusEl = document.getElementById('aiVsAIStatus');
-    const logEl = document.getElementById('aiVsAILog');
-
-    async function runAIVsAI() {
-      aiVsAIRunning = true;
-      aiVsAIPauseRequested = false;
-      btnStart.style.display = 'none';
-      btnPause.style.display = 'inline-block';
-      logEl.innerHTML = '';
-      statusEl.textContent = 'Starting AI vs AI demo...';
-      
-      const iterations = parseInt(document.getElementById('aiVsAIIterations').value, 10) || 20;
-      let moveCount = 0;
-      const MAX_MOVES = 150;
-
-      while(aiVsAIRunning && moveCount < MAX_MOVES) {
-        if(aiVsAIPauseRequested) {
-          statusEl.textContent = '⏸️ Paused';
-          break;
-        }
-
-        // Check game state
-        const snapshot = window.GameAPI.snapshot();
-        const allyCount = Object.values(snapshot.pieces).filter(p=>p.player==='ally').length;
-        const enemyCount = Object.values(snapshot.pieces).filter(p=>p.player==='enemy').length;
-        const dragonDead = !snapshot.pieces[snapshot.dragonId];
-
-        // Terminal conditions
-        if(allyCount === 0 || enemyCount === 0 || dragonDead) {
-          let winner = '';
-          if(dragonDead) winner = '🐉 Dragon defeated!';
-          else if(allyCount === 0) winner = '🔴 Player 2 wins!';
-          else if(enemyCount === 0) winner = '🔵 Player 1 wins!';
-          statusEl.innerHTML = `<strong>✓ Game Over!</strong> ${winner}<br>Moves: ${moveCount}`;
-          aiVsAIRunning = false;
-          btnStart.style.display = 'inline-block';
-          btnPause.style.display = 'none';
-          return;
-        }
-
-        // If a revival choice is pending, auto-select one for the AI
-        if(snapshot.pendingRevival){
-          const playerKey = snapshot.pendingRevival.playerKey;
-          const removed = (snapshot.removedChampions && snapshot.removedChampions[playerKey]) || [];
-          if(removed.length > 0){
-            // Choose the removed champion with highest maxHp (prefer sturdier revive)
-            let bestIdx = 0; let bestHp = -Infinity;
-            for(let i=0;i<removed.length;i++){ const hp = removed[i].maxHp||0; if(hp>bestHp){ bestHp=hp; bestIdx=i; } }
-            const ok = window.GameAPI.chooseRevival(playerKey, bestIdx);
-            statusEl.textContent = `Auto-reviving ${playerKey}...`;
-            logEl.innerHTML += `AUTO: Revive ${playerKey} idx ${bestIdx}\n`;
-            logEl.scrollTop = logEl.scrollHeight;
-            await new Promise(r=>setTimeout(r, 400));
-            continue;
-          } else {
-            // No removed champions - skip briefly
-            await new Promise(r=>setTimeout(r, 200));
-            continue;
-          }
-        }
-
-        // If a threshold removal choice is pending, auto-select a victim
-        if(snapshot.activeAction === 'threshold-removal-choice' || snapshot.thresholdRemovalPending){
-          const pending = snapshot.thresholdRemovalPending || {};
-          const eligible = pending.eligibleVictims || [];
-          if(eligible.length > 0){
-            // Prefer the weakest eligible piece (lowest currentHp)
-            let chosen = eligible[0]; let bestHp = Infinity;
-            for(const id of eligible){ const p = snapshot.pieces[id]; const hp = (p && (p.currentHp||p.maxHp||0)) || 0; if(hp < bestHp){ bestHp = hp; chosen = id; } }
-            const ok = window.GameAPI.chooseThresholdRemovalById(chosen);
-            logEl.innerHTML += `AUTO: Threshold removal ${chosen}\n`;
-            logEl.scrollTop = logEl.scrollHeight;
-            await new Promise(r=>setTimeout(r, 400));
-            continue;
-          } else {
-            await new Promise(r=>setTimeout(r, 200));
-            continue;
-          }
-        }
-
-        // Determine current actor
-        const actor = snapshot.currentActor || 'ally';
-          const difficulty = (actor === 'ally') ? document.getElementById('aiDifficultyAlly').value : document.getElementById('aiDifficultyEnemy').value;
-        const actorDisplay = actor === 'ally' ? '🔵 P1' : (actor === 'enemy' ? '🔴 P2' : '🐉');
-
-        // If it's the dragon's turn, skip AI control and let the game's built-in dragon handler run
-        if(actor === 'boss') {
-          statusEl.textContent = `Move ${moveCount + 1}: ${actorDisplay} acting automatically...`;
-          // Wait for dragon's auto-action to complete (it has built-in setTimeout delays)
-          await new Promise(resolve => setTimeout(resolve, 1500));
-          moveCount++;
-          continue;
-        }
-
-        statusEl.textContent = `Move ${moveCount + 1}: ${actorDisplay} acting...`;
-        
-        // Small delay for visual feedback
-        await new Promise(resolve => setTimeout(resolve, 50));
-        
-        try {
-          const best = await findBestActionForDifficulty(iterations, actor, difficulty);
-          if(!best) {
-            statusEl.innerHTML = `<strong>✗ Error:</strong> No legal action (${moveCount} moves)`;
-            aiVsAIRunning = false;
-            btnStart.style.display = 'inline-block';
-            btnPause.style.display = 'none';
-            return;
-          }
-          
-          const ok = window.GameAPI.applyActionToLive(best);
-          if(!ok) {
-            statusEl.innerHTML = `<strong>✗ Error:</strong> Action failed (${moveCount} moves)`;
-            aiVsAIRunning = false;
-            btnStart.style.display = 'inline-block';
-            btnPause.style.display = 'none';
-            return;
-          }
-          
-          // Log the move
-          const actionType = best.type || 'unknown';
-          const logLine = `${moveCount + 1}. ${actorDisplay} ${actionType}`;
-          logEl.innerHTML += logLine + '\n';
-          logEl.scrollTop = logEl.scrollHeight;
-          moveCount++;
-          
-          // After applying action, wait for game state to update
-          // endTurn actions need more time since they trigger full turn logic
-          const delayTime = (best.type === 'endTurn') ? 600 : 150;
-          await new Promise(resolve => setTimeout(resolve, delayTime));
-          
-        } catch(e) {
-          statusEl.innerHTML = `<strong>✗ Exception:</strong> ${e.message}`;
-          console.error('AI vs AI error:', e);
-          aiVsAIRunning = false;
-          btnStart.style.display = 'inline-block';
-          btnPause.style.display = 'none';
-          return;
-        }
-      }
-
-      if(moveCount >= MAX_MOVES) {
-        statusEl.innerHTML = `<strong>⚠ Limit:</strong> Stopped at ${MAX_MOVES} moves`;
-      }
-
-      aiVsAIRunning = false;
-      btnStart.style.display = 'inline-block';
-      btnPause.style.display = 'none';
-    }
-
-    btnStart.addEventListener('click', async ()=> {
-      await runAIVsAI();
-    });
-
-    btnPause.addEventListener('click', ()=> {
-      aiVsAIPauseRequested = true;
-    });
-  });
+  // Export the MCTS AI functions for use by aiManager.js
+  window.findBestActionForDifficulty = findBestActionForDifficulty;
 })();
 </script>
 </body>

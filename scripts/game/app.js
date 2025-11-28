@@ -1,33 +1,45 @@
 // app.js — game UI and logic refactored to use Champion objects (fighter/ranger/dragon)
 (function(){
-document.addEventListener('DOMContentLoaded', ()=>{
-  /* ---------- config & state ---------- */
-  const ROWS = 7, COLS = 7, MAX_AP = 6;
-  const CHAMP_REG = { fighter: window.Fighter, ranger: window.Ranger };
-  let grid = Array.from({length:ROWS}, ()=> Array(COLS).fill(null));
-  let pieces = {}; // id -> Champion instance
-  let setupTurn = 'ally';
-  let phase = 'setup';
-  let setupPlaced = { ally:[], enemy:[] };
-  let selectedChampionType = 'fighter';
-  let dragonId = null;
+  console.log('[app.js] ===== APP.JS LOADED =====');
+  console.log('[app.js] window.Fighter:', typeof window.Fighter);
+  console.log('[app.js] window.Ranger:', typeof window.Ranger);
+  console.log('[app.js] window.BossDragon:', typeof window.BossDragon);
+  console.log('[app.js] window.Champion:', typeof window.Champion);
 
-  // players
-  const player = {
-    ally: {hpTotal:0, hpCurrent:0, ap:3, segmentIndex:3, lastHit:null, prevSegmentIndex:3, dragonBuff:false},
-    enemy:{hpTotal:0, hpCurrent:0, ap:3, segmentIndex:3, lastHit:null, prevSegmentIndex:3, dragonBuff:false}
-  };
+  function initializeGame() {
+    try {
+      console.log('[app.js] ===== initializeGame CALLED =====');
+      console.log('[app.js] document.readyState:', document.readyState);
+    
+    /* ---------- config & state ---------- */
+    const ROWS = 7, COLS = 7, MAX_AP = 6;
+    const CHAMP_REG = { fighter: window.Fighter, ranger: window.Ranger };
+    let grid = Array.from({length:ROWS}, ()=> Array(COLS).fill(null));
+    let pieces = {}; // id -> Champion instance
+    let setupTurn = 'ally';
+    let phase = 'setup';
+    console.log('[app.js init] phase initialized to:', phase);
+    let setupPlaced = { ally:[], enemy:[] };
+    let selectedChampionType = 'fighter';
+    let dragonId = null;
 
-  // runtime
-  let currentStepIndex = 0; // 0: ally, 1: boss, 2: enemy, 3: boss
-  const cycle = ['ally','boss','enemy','boss'];
-  let currentActor = null;
-  let selectedId = null;
-  let activeAction = null;
-  let bullSpend = 1;
-  let pendingRestRewards = {}; // Track pending rest rewards per piece
-  
-  // Strength passive state
+    // players
+    const player = {
+      ally: {hpTotal:0, hpCurrent:0, ap:3, segmentIndex:3, lastHit:null, prevSegmentIndex:3, dragonBuff:false},
+      enemy:{hpTotal:0, hpCurrent:0, ap:3, segmentIndex:3, lastHit:null, prevSegmentIndex:3, dragonBuff:false}
+    };
+
+    // runtime
+    let renderCallCount = 0;
+    let currentStepIndex = 0; // 0: ally, 1: boss, 2: enemy, 3: boss
+    const cycle = ['ally','boss','enemy','boss'];
+    let currentActor = null;
+    let selectedId = null;
+    let activeAction = null;
+    let bullSpend = 1;
+    let pendingRestRewards = {}; // Track pending rest rewards per piece
+    
+    // Strength passive state
   let strengthPending = null; // { attackerId, targetId } when Strength can be used
   
   // Ranger Focused Stance state
@@ -37,6 +49,13 @@ document.addEventListener('DOMContentLoaded', ()=>{
   let dragonDisplacingPiece = null; // { targetId, originR, originC } when Dragon displaces a piece
   let firebreathHitTargets = []; // Track pieces hit by Firebreath for threshold removal choice
 
+  // Dragon turn automation state
+  let bossActInProgress = false; // Flag to prevent multiple bossAct calls from being scheduled
+  let bossAutoAdvanceTimeout = null; // ID of the pending auto-advance timeout, so we can cancel it
+  
+  // Game loop state
+  let gameLoopInterval = null; // ID of the game loop interval
+  
   // Universal mechanics state
   let removedChampions = { ally: [], enemy: [] }; // Track removed pieces for revival
   let pendingRemovalChoice = null; // { damageDealer, hitTargets[], shouldPromptOpponent } for multi-hit removal
@@ -59,6 +78,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
   const phaseLabel = document.getElementById('phaseLabel');
   const setupTitle = document.getElementById('setupTitle');
   const setupHint = document.getElementById('setupHint');
+
+  console.log('[app.js init] finishBtn element:', finishBtn);
+  console.log('[app.js init] resetBtn element:', resetBtn);
 
   const hpAllyEl = document.getElementById('hpAlly');
   const hpEnemyEl = document.getElementById('hpEnemy');
@@ -108,36 +130,44 @@ document.addEventListener('DOMContentLoaded', ()=>{
   const btnMainMenu = document.getElementById('btnMainMenu');
 
   /* ---------- strength passive handlers ---------- */
-  btnStrengthYes.addEventListener('click', ()=>{
-    if(!strengthPending) return;
-    const attacker = pieces[strengthPending.attackerId];
-    const target = pieces[strengthPending.targetId];
-    if(!attacker || !target){ strengthPending = null; strengthPrompt.style.display = 'none'; return; }
-    if(player[attacker.player].ap < 1){ log('Not enough AP for Strength (1 AP required)'); return; }
-    // Activate Strength: displace target to adjacent square
-    player[attacker.player].ap -= 1;
-    log(`${attacker.id} used Strength (1 AP): displacing ${target.id}...`);
-    activeAction = 'strength-displace';
-    highlightAdjEmpty(target.r, target.c);
-    log('Strength: click an adjacent empty tile to displace the enemy.');
-    strengthPrompt.style.display = 'none';
-    // DO NOT set strengthPending to null here — it's needed in resolveActionOn()
-  });
+  if (btnStrengthYes) {
+    btnStrengthYes.addEventListener('click', ()=>{
+      if(!strengthPending) return;
+      const attacker = pieces[strengthPending.attackerId];
+      const target = pieces[strengthPending.targetId];
+      if(!attacker || !target){ strengthPending = null; if(strengthPrompt) strengthPrompt.style.display = 'none'; return; }
+      if(player[attacker.player].ap < 1){ log('Not enough AP for Strength (1 AP required)'); return; }
+      // Activate Strength: displace target to adjacent square
+      player[attacker.player].ap -= 1;
+      log(`${attacker.id} used Strength (1 AP): displacing ${target.id}...`);
+      activeAction = 'strength-displace';
+      highlightAdjEmpty(target.r, target.c);
+      log('Strength: click an adjacent empty tile to displace the enemy.');
+      if(strengthPrompt) strengthPrompt.style.display = 'none';
+      // DO NOT set strengthPending to null here — it's needed in resolveActionOn()
+    });
+  }
 
-  btnStrengthNo.addEventListener('click', ()=>{
-    strengthPending = null;
-    strengthPrompt.style.display = 'none';
-    log('Strength not used.');
-  });
+  if (btnStrengthNo) {
+    btnStrengthNo.addEventListener('click', ()=>{
+      strengthPending = null;
+      if(strengthPrompt) strengthPrompt.style.display = 'none';
+      log('Strength not used.');
+    });
+  }
 
   /* ---------- game over handlers ---------- */
-  btnPlayAgain.addEventListener('click', ()=>{
-    restartGame();
-  });
+  if (btnPlayAgain) {
+    btnPlayAgain.addEventListener('click', ()=>{
+      restartGame();
+    });
+  }
 
-  btnMainMenu.addEventListener('click', ()=>{
-    returnToMainMenu();
-  });
+  if (btnMainMenu) {
+    btnMainMenu.addEventListener('click', ()=>{
+      returnToMainMenu();
+    });
+  }
 
   /* ---------- revival handlers ---------- */
   function showRevivalPrompt(playerKey){
@@ -205,6 +235,14 @@ document.addEventListener('DOMContentLoaded', ()=>{
           
           revivalPrompt.style.display = 'none';
           pendingRevival = null;
+          
+          // After revival, check if HP is still above 0
+          if(player[playerKey].hpCurrent <= 0){
+            log(`${playerKey === 'ally' ? 'Player 1' : 'Player 2'} HP still at 0 despite revival.`);
+            checkGameLoss(playerKey);
+            return;
+          }
+          
           render();
           return;
         }
@@ -221,6 +259,15 @@ document.addEventListener('DOMContentLoaded', ()=>{
     
     revivalPrompt.style.display = 'none';
     pendingRevival = null;
+    
+    // After revival, check if HP is still above 0
+    if(player[playerKey].hpCurrent <= 0){
+      log(`${playerKey === 'ally' ? 'Player 1' : 'Player 2'} HP still at 0 despite revival.`);
+      checkGameLoss(playerKey);
+      render();
+      return;
+    }
+    
     render();
     
     // Check if crossing another threshold UP (multiple threshold crossings)
@@ -251,11 +298,18 @@ document.addEventListener('DOMContentLoaded', ()=>{
   }
 
   function checkGameLoss(playerKey){
+    // Check if player has been eliminated in two ways:
+    // 1. No pieces remaining
     const aliveCount = setupPlaced[playerKey].filter(id => pieces[id]).length;
-    if(aliveCount === 0){
+    // 2. HP has reached 0
+    const playerHp = player[playerKey].hpCurrent;
+    
+    if(aliveCount === 0 || playerHp <= 0){
       log(`${playerKey === 'ally' ? 'Player 1' : 'Player 2'} has been eliminated!`);
       showGameOverPrompt(playerKey);
+      return true;
     }
+    return false;
   }
 
   function hideGameOverPrompt(){
@@ -278,6 +332,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
     focusedRangerId = null;
     dragonDisplacingPiece = null;
     firebreathHitTargets = [];
+    bossActInProgress = false;  // Clear dragon turn flag on restart
     removedChampions = { ally: [], enemy: [] };
     pendingRemovalChoice = null;
     pendingRevival = null;
@@ -335,6 +390,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
 
   function render(){
+    renderCallCount++;
+    console.log(`[render #${renderCallCount}] Called with phase=${phase}, currentActor=${currentActor}`);
     boardEl.innerHTML = '';
     for(let r=0;r<ROWS;r++){
       for(let c=0;c<COLS;c++){
@@ -429,6 +486,11 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
   // Update class card display for selected piece
   function updateClassCard() {
+    // Skip if card elements don't exist
+    if (!cardTitle || !cardImage || !cardStats || !cardAbilityList) {
+      return;
+    }
+    
     if (!selectedId || !pieces[selectedId]) {
       cardTitle.textContent = 'Select a piece to view details';
       cardImage.textContent = '[Class Image Placeholder]';
@@ -502,6 +564,18 @@ document.addEventListener('DOMContentLoaded', ()=>{
     turnLabel.textContent = currentActor ? `Turn: ${currentActor === 'ally' ? 'Player 1' : (currentActor === 'enemy' ? 'Player 2' : 'Dragon')}` : 'Turn: —';
     if(selectedId && pieces[selectedId]){ selName.textContent = selectedId + ' (' + (pieces[selectedId].champion||pieces[selectedId].name) + ')'; selHP.textContent = hpOf(pieces[selectedId]); }
     else { selName.textContent = '—'; selHP.textContent = '—'; }
+    
+    // Update game state display for setup panel
+    if(window.updateSetupStatus) window.updateSetupStatus();
+    
+    // Update game state display for game panel
+    if(window.updateGameStateDisplay) window.updateGameStateDisplay();
+    
+    // Trigger AI turn if it's an AI's turn
+    if(window.executeAITurnIfNeeded){
+      console.log(`[render] phase=${phase}, currentActor=${currentActor}, calling executeAITurnIfNeeded in 100ms`);
+      setTimeout(() => window.executeAITurnIfNeeded(), 100);
+    }
   }
 
   /* ---------- setup placement ---------- */
@@ -510,9 +584,11 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
   function placeForSetup(r,c){
     const validRow = setupTurn === 'ally' ? 0 : ROWS - 1;
-    if(r !== validRow){ log(`Place only on row ${validRow}`); return; }
-    if(grid[r][c]){ log('Cell occupied'); return; }
-    if(setupPlaced[setupTurn].length >= 3){ log('Already placed 3'); return; }
+    console.log('[placeForSetup] called with r=' + r + ', c=' + c + ', setupTurn=' + setupTurn + ', validRow=' + validRow);
+    console.log('[placeForSetup] BEFORE: finishBtn.disabled=' + finishBtn.disabled + ', setupPlaced.ally.length=' + setupPlaced.ally.length + ', setupPlaced.enemy.length=' + setupPlaced.enemy.length);
+    if(r !== validRow){ log(`Place only on row ${validRow}`); console.log('[placeForSetup] wrong row, returning'); return; }
+    if(grid[r][c]){ log('Cell occupied'); console.log('[placeForSetup] cell occupied, returning'); return; }
+    if(setupPlaced[setupTurn].length >= 3){ log('Already placed 3'); console.log('[placeForSetup] already 3 pieces, returning'); return; }
     const idx = setupPlaced[setupTurn].length;
     const id = (setupTurn === 'ally' ? 'A' : 'E') + idx;
     const Klass = CHAMP_REG[selectedChampionType];
@@ -524,21 +600,82 @@ document.addEventListener('DOMContentLoaded', ()=>{
     inst.r = r; inst.c = c;
     pieces[id] = inst; grid[r][c] = id; setupPlaced[setupTurn].push(id);
     log(`${setupTurn === 'ally' ? 'Player1' : 'Player2'} placed ${selectedChampionType} at (${r},${c})`);
+    console.log('[placeForSetup] AFTER push: setupPlaced[' + setupTurn + '].length=' + setupPlaced[setupTurn].length);
+    // Check if 3 pieces placed for current player
+    if(setupPlaced[setupTurn].length === 3) {
+      console.log('[placeForSetup] 3 pieces placed! Setting finishBtn.disabled = false');
+      finishBtn.disabled = false;
+      console.log('[placeForSetup] AFTER set: finishBtn.disabled=' + finishBtn.disabled);
+    } else {
+      console.log('[placeForSetup] only ' + setupPlaced[setupTurn].length + ' pieces placed, finishBtn stays disabled');
+    }
+    console.log('[placeForSetup] calling render()');
     render();
-    if(setupPlaced[setupTurn].length === 3) finishBtn.disabled = false;
+    // Double-check button state after render
+    if(setupPlaced[setupTurn].length === 3 && finishBtn.disabled) {
+      console.log('[placeForSetup] WARNING: Button got re-disabled by render()! Re-enabling...');
+      finishBtn.disabled = false;
+    }
+    console.log('[placeForSetup] render() completed, finishBtn.disabled=' + finishBtn.disabled);
   }
 
-  finishBtn.addEventListener('click', ()=>{
-    if(setupTurn === 'ally'){
-      setupTurn = 'enemy'; setupTitle.textContent = 'Player 2 — Place 3 champions'; finishBtn.textContent = 'Finish Player 2'; finishBtn.disabled = true; btnFighter.classList.add('active'); btnRanger.classList.remove('active'); selectedChampionType='fighter'; setupHint.textContent = 'Player 2: choose and place 3 units on row 6.';
-    } else {
-      phase = 'inprogress'; setupTitle.textContent = 'Setup Complete'; setupHint.textContent = 'Game started! Player 1 goes first.'; finishBtn.style.display='none'; resetBtn.style.display='none'; computePools(); placeDragon(); currentStepIndex = 0; currentActor = cycle[currentStepIndex]; render(); log('Setup complete. Game begins! Player 1 (ally) goes first.');
-    }
-  });
+  if(finishBtn) {
+    console.log('[app.js init] Attaching finishBtn click listener');
+    finishBtn.addEventListener('click', ()=>{
+      // Ignore clicks if button is disabled
+      if(finishBtn.disabled) {
+        console.log('[finishBtn click] Ignoring click - button is disabled');
+        return;
+      }
+      console.log('[finishBtn click] ===== CLICKED =====');
+      console.log('[finishBtn click] setupTurn=' + setupTurn + ', setupPlaced.ally=' + setupPlaced.ally.length + ', setupPlaced.enemy=' + setupPlaced.enemy.length);
+      if(setupTurn === 'ally'){
+        // P1 finished, now set up for P2
+        console.log('[finishBtn click] P1 finished, switching to P2 setup');
+        setupTurn = 'enemy'; setupTitle.textContent = 'Player 2 — Place 3 champions'; finishBtn.textContent = 'Finish Player 2'; finishBtn.disabled = true; btnFighter.classList.add('active'); btnRanger.classList.remove('active'); selectedChampionType='fighter'; setupHint.textContent = 'Player 2: choose and place 3 units on row 6.'; render();
+      } else {
+        // P2 finished - show AI configuration screen and enable Start Game button
+        console.log('[finishBtn click] P2 finished, showing AI configuration panel');
+        setupTitle.textContent = 'Setup Complete!'; 
+        setupHint.textContent = 'Configure AI opponents on the right, then click Start Game'; 
+        finishBtn.style.display='none'; 
+        resetBtn.style.display='none';
+        // Hide setup panel on left, show AI config on right
+        const setupPanel = document.getElementById('setupPanel');
+        const rightSidebar = document.getElementById('rightSidebar');
+        if(setupPanel) setupPanel.style.display = 'none';
+        if(rightSidebar) {
+          rightSidebar.style.display = 'flex';
+        }
+        // Directly enable the Start Game button
+        const btnStartGame = document.getElementById('btnStartGame');
+        if(btnStartGame) {
+          console.log('[finishBtn click] DIRECTLY enabling btnStartGame');
+          btnStartGame.disabled = false;
+          btnStartGame.style.opacity = '1';
+          btnStartGame.style.cursor = 'pointer';
+          btnStartGame.style.backgroundColor = '#0a6b3d';
+          btnStartGame.style.pointerEvents = 'auto';
+          btnStartGame.removeAttribute('aria-disabled');
+          btnStartGame.setAttribute('aria-disabled', 'false');
+          // Mark setup as complete so updateSetupStatus won't re-disable the button
+          if(window.markSetupComplete) {
+            window.markSetupComplete();
+          }
+        }
+      }
+    });
+  } else {
+    console.error('[app.js] ERROR: finishBtn element not found!');
+  }
 
-  resetBtn.addEventListener('click', ()=>{
-    phase='setup'; setupTurn='ally'; setupPlaced={ally:[],enemy:[]}; selectedChampionType='fighter'; btnFighter.classList.add('active'); btnRanger.classList.remove('active'); finishBtn.disabled=true; finishBtn.textContent='Finish Player 1'; setupTitle.textContent='Player 1 — Place 3 champions'; setupHint.textContent='Choose champion type then click tiles on your starting row to place.'; emptyGrid(); render(); log('Setup reset.');
-  });
+  if(resetBtn) {
+    resetBtn.addEventListener('click', ()=>{
+      phase='setup'; setupTurn='ally'; setupPlaced={ally:[],enemy:[]}; selectedChampionType='fighter'; btnFighter.classList.add('active'); btnRanger.classList.remove('active'); finishBtn.disabled=true; finishBtn.textContent='Finish Player 1'; finishBtn.style.display='block'; setupTitle.textContent='Player 1 — Place 3 champions'; setupHint.textContent='Choose champion type then click tiles on your starting row to place.'; emptyGrid(); render(); log('Setup reset.');
+    });
+  } else {
+    console.error('[app.js] ERROR: resetBtn element not found!');
+  }
 
   function computePools(){
     const allySum = setupPlaced.ally.reduce((s,id)=> s + (hpOf(pieces[id]) || 0), 0);
@@ -548,9 +685,12 @@ document.addEventListener('DOMContentLoaded', ()=>{
   }
 
   function placeDragon(){
+    console.log('[placeDragon] Starting dragon placement');
     const r = Math.floor(ROWS/2), c = Math.floor(COLS/2); 
+    console.log('[placeDragon] r=' + r + ', c=' + c);
     const id = 'B0'; 
     const boss = new window.BossDragon(); 
+    console.log('[placeDragon] Created BossDragon:', boss);
     boss.id = id; 
     boss.player = 'boss'; 
     boss.champion = 'dragon'; 
@@ -564,6 +704,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
     pieces[id] = boss; 
     grid[r][c] = id; 
     dragonId = id; 
+    console.log('[placeDragon] Dragon placed successfully at (' + r + ',' + c + '), dragonId=' + dragonId);
     log('Dragon placed at center.');
   }
 
@@ -671,12 +812,13 @@ document.addEventListener('DOMContentLoaded', ()=>{
       const adj = getAdjIds(p.r, p.c);
       let hitTargets = [];
       
-      adj.forEach(tid => { 
-        if(tid && pieces[tid]){ 
-          applyDamage(p.id, tid, 2); 
-          hitTargets.push(tid); 
-        } 
-      });
+      for(const tid of adj){
+        if(tid && pieces[tid]){
+          applyDamage(p.id, tid, 2);
+          hitTargets.push(tid);
+          if(phase === 'gameover') break; // Stop processing if game ends
+        }
+      }
       
       lungingState.hitTargets = hitTargets;
       lungingState.strengthTargets = hitTargets.filter(tid => pieces[tid]); // Alive targets
@@ -765,12 +907,13 @@ document.addEventListener('DOMContentLoaded', ()=>{
           const adj = getAdjIds(p.r, p.c);
           let hitTargets = [];
           
-          adj.forEach(tid => { 
-            if(tid && pieces[tid]){ 
-              applyDamage(p.id, tid, 2); 
-              hitTargets.push(tid); 
-            } 
-          });
+          for(const tid of adj){
+            if(tid && pieces[tid]){
+              applyDamage(p.id, tid, 2);
+              hitTargets.push(tid);
+              if(phase === 'gameover') break; // Stop processing if game ends
+            }
+          }
           
           lungingState.hitTargets = hitTargets;
           lungingState.strengthTargets = hitTargets.filter(tid => pieces[tid]);
@@ -1098,6 +1241,15 @@ document.addEventListener('DOMContentLoaded', ()=>{
     
     log(`${attackerId} hit ${targetId} for ${dmg}. ${targetId} HP=${target.currentHp}. Owner pool ${player[target.player].hpCurrent}`); 
     
+    // CRITICAL: Check if player HP reached 0 immediately after damage
+    if(player[target.player].hpCurrent <= 0){
+      log(`${target.player === 'ally' ? 'Player 1' : 'Player 2'} HP reached 0!`);
+      // Set phase to gameover to prevent further actions
+      phase = 'gameover';
+      checkGameLoss(target.player);
+      return;
+    }
+    
     // Only delete individual pieces if they took lethal damage AND it's a targeted attack (not AOE)
     // For AOE attacks like Firebreath, let checkSegmentation handle piece deletion via threshold crossing
     const isAOE = attackerId && pieces[attackerId] && pieces[attackerId].champion === 'dragon';
@@ -1147,9 +1299,10 @@ document.addEventListener('DOMContentLoaded', ()=>{
     
     const cur = player[playerKey].hpCurrent;
     
-    // Check if HP has reached 0 (game over condition)
+    // Check if HP has reached 0 (game over condition) - HIGHEST PRIORITY
     if(cur <= 0){
-      log(`${playerKey === 'ally' ? 'Player 1' : 'Player 2'} HP has reached 0!`);
+      log(`${playerKey === 'ally' ? 'Player 1' : 'Player 2'} HP has reached 0 — game over!`);
+      phase = 'gameover';
       checkGameLoss(playerKey);
       return;
     }
@@ -1361,7 +1514,13 @@ document.addEventListener('DOMContentLoaded', ()=>{
       if(currentActor !== 'boss'){ log('Only the Dragon can use this on its turn.'); return; }
       const adj = getAdjIds(p.r,p.c);
       let hit = false;
-      adj.forEach(tid => { if(tid && pieces[tid] && pieces[tid].player !== 'boss'){ applyDamage(p.id, tid, 3); hit = true; } });
+      for(const tid of adj){
+        if(tid && pieces[tid] && pieces[tid].player !== 'boss'){
+          applyDamage(p.id, tid, 3);
+          hit = true;
+          if(phase === 'gameover') break; // Stop processing if game ends
+        }
+      }
       if(hit) log('Dragon used Firebreath (3 dmg to all adjacent)');
       else log('No adjacent enemies for Firebreath.');
       p.acted = true;
@@ -1413,6 +1572,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
           if(t.player !== 'boss' && isQueenAccessible(p.r,p.c,t.r,t.c,2)){
             applyDamage(p.id, id, 2);
             hit = true;
+            if(phase === 'gameover') break; // Stop processing if game ends
           }
         }
         if(hit) log('Dragon used Focused Assault (2 dmg to all enemies in range 2)');
@@ -1441,6 +1601,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
           hitTargets.push(tid);
           applyDamage(p.id, tid, 3);
           hit = true;
+          if(phase === 'gameover') return; // Stop processing if game ends
         }
       });
       if(hit){
@@ -1548,12 +1709,13 @@ document.addEventListener('DOMContentLoaded', ()=>{
       // Firebreath: 3 dmg to all adjacent enemies
       const adj = getAdjIds(boss.r,boss.c); 
       const hitTargets = [];
-      adj.forEach(tid => { 
+      for(const tid of adj){
         if(tid && pieces[tid] && pieces[tid].player !== 'boss'){
           hitTargets.push(tid);
           applyDamage(boss.id, tid, 3);
+          if(phase === 'gameover') break; // Stop processing if game ends
         }
-      });
+      }
       if(hitTargets.length > 0){
         log('Dragon used Firebreath (3 dmg to all adjacent)');
         // Store hit targets so threshold removal can restrict choices to damaged pieces
@@ -1585,6 +1747,17 @@ document.addEventListener('DOMContentLoaded', ()=>{
               if(cell) {
                 log(`Auto-relocating displaced piece to (${nr},${nc})`);
                 cell.click();
+                
+                // CRITICAL: After auto-resolution completes, we need to clear the flag
+                // The AI's executeAITurnIfNeeded will handle auto-ending the turn once it sees no pending actions
+                setTimeout(() => {
+                  if(activeAction === 'dragon-displace'){
+                    // Displacement still pending
+                    return;
+                  }
+                  // Displacement resolved - no action needed here
+                  // Let the normal flow handle turn advancement
+                }, 150);  // Short delay to ensure displacement handler completes
               }
               break;
             }
@@ -1613,7 +1786,83 @@ document.addEventListener('DOMContentLoaded', ()=>{
   }
 
   /* ---------- turn flow ---------- */
+  
+  // Shared turn advancement function used by both btnEndTurn and dragon auto-advance
+  function advanceTurn() {
+    console.log('[advanceTurn] Advancing turn from index=' + currentStepIndex + ', actor=' + currentActor);
+    
+    currentStepIndex = (currentStepIndex + 1) % cycle.length; 
+    currentActor = cycle[currentStepIndex]; 
+    activeAction = null;  // Clear any pending actions when advancing turns
+    log(`Turn advanced to ${currentActor === 'ally' ? 'Player 1' : (currentActor === 'enemy' ? 'Player 2' : 'Dragon')}`);
+    
+    if(currentActor === 'ally' || currentActor === 'enemy'){
+      const playerKey = currentActor;
+      for(const id in pieces){
+        const p = pieces[id];
+        if(p.player === playerKey){
+          // Check if this piece is locked from Lunging Strikes (used last turn, must skip this turn)
+          if(p.lungingLocked){
+            p.rested = true;
+            p.acted = true;
+            log(`${id} is locked from action due to Lunging Strikes — skipping this turn.`);
+          } else {
+            p.rested = false;
+            p.acted = false;
+          }
+          // Apply focused state if this ranger was set to focus last turn
+          if(focusedRangers[playerKey] === id && p.champion === 'ranger'){
+            p.focused = true;
+            log(`${p.id} is focused! Ability ranges are doubled this turn.`);
+            focusedRangers[playerKey] = null;
+          } else {
+            p.focused = false;
+          }
+          // Decrement cooldowns
+          if(p.cooldowns){
+            for(const key in p.cooldowns){
+              if(p.cooldowns[key] > 0) p.cooldowns[key]--;
+            }
+          }
+          // Remove expired buffs
+          if(p.buff && p.buff.turns){
+            p.buff.turns--;
+            if(p.buff.turns <= 0) p.buff = null;
+          }
+          log(`${id} is ready for a new turn.`);
+        }
+      }
+      
+      // Pause or resume AI execution based on who's turn it is
+      const isAI = (currentActor === 'ally') ? window.gameConfig.p1IsAI : window.gameConfig.p2IsAI;
+      if(isAI) {
+        console.log(`[advanceTurn] AI turn for ${currentActor}, resuming AI execution`);
+        window.pauseAIExecution(false); // Resume AI for AI turn
+      } else {
+        console.log(`[advanceTurn] Human turn for ${currentActor}, pausing AI execution`);
+        window.pauseAIExecution(true); // Pause AI for human turn
+      }
+    } else if(currentActor === 'boss') {
+      console.log('[advanceTurn] Dragon turn, resuming AI execution');
+      window.pauseAIExecution(false); // Don't pause for dragon
+    }
+    
+    render();
+  }
+  
   btnEndTurn.addEventListener('click', ()=>{
+    console.log('[btnEndTurn] CLICKED - currentActor=' + currentActor + ', phase=' + phase);
+    if (window.gameConfig) {
+      console.log('[btnEndTurn] gameConfig:', window.gameConfig);
+    }
+    console.log('[btnEndTurn] Stack trace:');
+    console.trace();
+    bossActInProgress = false;  // Clear dragon turn flag when player manually ends turn
+    if(bossAutoAdvanceTimeout){
+      clearTimeout(bossAutoAdvanceTimeout);
+      bossAutoAdvanceTimeout = null;
+      log('Cancelled pending auto-advance to avoid race condition');
+    }
     if(phase === 'setup'){ if(setupPlaced.ally.length !== 3 || setupPlaced.enemy.length !== 3){ log('Both players must place 3 champions to start.'); return; } phase = 'inprogress'; currentStepIndex = 0; currentActor = cycle[currentStepIndex]; log('Game begins. Player 1 (ally) goes first.'); render(); return; }
     
     // CLEAR LUNGING LOCK: If the current actor had any pieces with lungingLocked, clear the flag now (their "locked turn" has passed)
@@ -1652,6 +1901,14 @@ document.addEventListener('DOMContentLoaded', ()=>{
         
         // Check if this player's HP crossed a threshold (handles both down and up crossings)
         checkSegmentation(piece.player);
+        
+        // CRITICAL: After applying rest rewards, check if player still alive
+        if(player[piece.player].hpCurrent <= 0){
+          log(`${piece.player === 'ally' ? 'Player 1' : 'Player 2'} HP reached 0 after rest application.`);
+          phase = 'gameover';
+          checkGameLoss(piece.player);
+          return; // Exit early - game is over
+        }
       }
     }
     pendingRestRewards = {};
@@ -1666,9 +1923,15 @@ document.addEventListener('DOMContentLoaded', ()=>{
     }
     
     // Don't advance the turn yet if Dragon displacement is pending
+    // However, if auto-resolution completed, activeAction should have been cleared
+    // If we somehow still have it set here, it means auto-resolve didn't complete, so force clear
     if(activeAction === 'dragon-displace'){
-      log('Cannot end turn while waiting for player to choose Dragon displacement...');
-      return;
+      // This should rarely happen since auto-resolve should clear it by 100ms
+      // But if we get here, clear it to unblock the turn
+      log('Dragon displacement pending — force clearing to unblock turn advancement');
+      activeAction = null;
+      dragonDisplacingPiece = null;  // Also clear the piece
+      // Don't return — proceed with turn advancement
     }
     
     // Don't advance the turn yet if threshold removal choice is pending
@@ -1683,111 +1946,59 @@ document.addEventListener('DOMContentLoaded', ()=>{
       return;
     }
     
-    currentStepIndex = (currentStepIndex + 1) % cycle.length; currentActor = cycle[currentStepIndex]; log(`Turn advanced to ${currentActor === 'ally' ? 'Player 1' : (currentActor === 'enemy' ? 'Player 2' : 'Dragon')}`);
-    if(currentActor === 'ally' || currentActor === 'enemy'){
-      const playerKey = currentActor;
-      for(const id in pieces){
-        const p = pieces[id];
-        if(p.player === playerKey){
-          // Check if this piece is locked from Lunging Strikes (used last turn, must skip this turn)
-          if(p.lungingLocked){
-            p.rested = true;
-            p.acted = true;
-            log(`${id} is locked from action due to Lunging Strikes — skipping this turn.`);
-            // Don't clear the flag yet; it will be cleared at the END of this turn
-          } else {
-            p.rested = false;
-            p.acted = false;
-          }
-          // Apply focused state if this ranger was set to focus last turn
-          if(focusedRangers[playerKey] === id && p.champion === 'ranger'){
-            p.focused = true;
-            log(`${p.id} is focused! Ability ranges are doubled this turn.`);
-            focusedRangers[playerKey] = null;
-          } else {
-            p.focused = false;
-          }
-          // Decrement cooldowns (e.g., Bullseye)
-          if(p.cooldowns){
-            for(const key in p.cooldowns){
-              if(p.cooldowns[key] > 0) p.cooldowns[key]--;
-            }
-          }
-          // Remove expired buffs
-          if(p.buff && p.buff.turns){
-            p.buff.turns--;
-            if(p.buff.turns <= 0) p.buff = null;
-          }
-          log(`${id} is ready for a new turn.`);
-        }
-      }
-    }
-    render();
-    if(currentActor === 'boss'){
+    console.log('[btnEndTurn] About to advance turn from index=' + currentStepIndex + ', actor=' + currentActor);
+    advanceTurn();
+    
+    // SCHEDULE NEXT TURN HANDLER
+    // If next actor is DRAGON, schedule dragon turn
+    if(currentActor === 'boss' && !bossActInProgress){
+      console.log('[btnEndTurn] Next actor is Dragon, scheduling dragon turn');
+      bossActInProgress = true;  // Set flag to prevent re-scheduling
       setTimeout(()=>{
         bossAct();
         
         // AUTO-ADVANCE: After Dragon finishes its action, automatically advance to next turn
         // (unless there's a pending displacement, threshold removal, or revival that requires player input)
-        setTimeout(()=>{
+        bossAutoAdvanceTimeout = setTimeout(()=>{
           if(activeAction === 'dragon-displace'){
             log('Dragon displacement pending — waiting for player choice...');
+            bossActInProgress = false;  // Clear flag since we're not advancing
             return;
           }
           if(activeAction === 'threshold-removal-choice'){
             log('Threshold removal choice pending — waiting for player choice...');
+            bossActInProgress = false;  // Clear flag since we're not advancing
             return;
           }
           if(pendingRevival){
             log('Revival pending — waiting for player choice...');
+            bossActInProgress = false;  // Clear flag since we're not advancing
             return;
           }
           log('Dragon turn auto-advancing to next actor...');
-          // Trigger end turn logic automatically
-          currentStepIndex = (currentStepIndex + 1) % cycle.length;
-          currentActor = cycle[currentStepIndex];
-          log(`Turn advanced to ${currentActor === 'ally' ? 'Player 1' : (currentActor === 'enemy' ? 'Player 2' : 'Dragon')}`);
+          advanceTurn();
+          bossActInProgress = false;  // Clear flag after advancing turn
+          bossAutoAdvanceTimeout = null;  // Clear the timeout ID after it fires
           
-          if(currentActor === 'ally' || currentActor === 'enemy'){
-            const playerKey = currentActor;
-            for(const id in pieces){
-              const p = pieces[id];
-              if(p.player === playerKey){
-                // Check if this piece is locked from Lunging Strikes (used last turn, must skip this turn)
-                if(p.lungingLocked){
-                  p.rested = true;
-                  p.acted = true;
-                  log(`${id} is locked from action due to Lunging Strikes — skipping this turn.`);
-                  // Don't clear the flag yet; it will be cleared at the END of this turn
-                } else {
-                  p.rested = false;
-                  p.acted = false;
-                }
-                // Apply focused state if this ranger was set to focus last turn
-                if(focusedRangers[playerKey] === id && p.champion === 'ranger'){
-                  p.focused = true;
-                  log(`${p.id} is focused! Ability ranges are doubled this turn.`);
-                  focusedRangers[playerKey] = null;
-                } else {
-                  p.focused = false;
-                }
-                // Decrement cooldowns (e.g., Bullseye)
-                if(p.cooldowns){
-                  for(const key in p.cooldowns){
-                    if(p.cooldowns[key] > 0) p.cooldowns[key]--;
-                  }
-                }
-                // Remove expired buffs
-                if(p.buff && p.buff.turns){
-                  p.buff.turns--;
-                  if(p.buff.turns <= 0) p.buff = null;
-                }
-              }
-            }
+          // CRITICAL: Trigger AI execution if the new actor is AI
+          // This ensures AI turns are executed after Dragon's automatic advance
+          console.log('[btnEndTurn] Dragon auto-advanced, checking if new actor is AI');
+          const newActorIsAI = (currentActor === 'ally') ? window.gameConfig.p1IsAI : 
+                               (currentActor === 'enemy') ? window.gameConfig.p2IsAI : false;
+          if(newActorIsAI && window.executeAITurnIfNeeded){
+            console.log('[btnEndTurn] New actor is AI, scheduling AI turn');
+            setTimeout(() => window.executeAITurnIfNeeded(), 100);
           }
-          render();
-        }, 100); // Small delay to ensure bossAct completes fully
+        }, 250); // Increased from 100ms to allow auto-resolve to complete first
       }, 450);
+    } else if(currentActor === 'ally' || currentActor === 'enemy') {
+      // Next actor is a PLAYER (human or AI)
+      console.log(`[btnEndTurn] Next actor is ${currentActor} (${window.gameConfig[currentActor === 'ally' ? 'p1IsAI' : 'p2IsAI'] ? 'AI' : 'Human'})`);
+      const isAI = window.gameConfig[currentActor === 'ally' ? 'p1IsAI' : 'p2IsAI'];
+      if(isAI && window.executeAITurnIfNeeded){
+        console.log(`[btnEndTurn] ${currentActor} is AI, scheduling AI turn`);
+        setTimeout(() => window.executeAITurnIfNeeded(), 100);
+      }
     }
   });
 
@@ -1916,7 +2127,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
         const dirsLocal = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
         const adjIds = [];
         for(const d of dirsLocal){ const nr=attacker.r+d[0], nc=attacker.c+d[1]; if(inBounds(nr,nc) && grid[nr][nc]) adjIds.push(grid[nr][nc]); }
-        adjIds.forEach(tid=>{ if(pieces[tid]){ applyDamage(attacker.id, tid, 2); } });
+        for(const tid of adjIds){ if(pieces[tid]){ applyDamage(attacker.id, tid, 2); if(phase === 'gameover') break; } }
         // Attempt auto-displace: for each hit target still alive, move to first adjacent empty
         adjIds.forEach(tid=>{ const t = pieces[tid]; if(t){ for(const d of dirsLocal){ const tr = t.r + d[0], tc = t.c + d[1]; if(inBounds(tr,tc) && grid[tr][tc] === null){ grid[t.r][t.c] = null; t.r = tr; t.c = tc; grid[tr][tc] = t.id; log(`${attacker.id} (lunging) displaced ${t.id} to (${tr},${tc})`); break; } } } });
         // Perform up to 3 free adjacent moves if possible (pick first empty each time)
@@ -1927,6 +2138,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
         const p = pieces[action.pieceId]; if(!p) return false; if(p.rested || p.acted) return false; p.rested = true; pendingRestRewards[p.id] = {ap:1, hp:1}; render(); return true;
       }
       if(action.type === 'endTurn'){
+        console.log('[applyActionToLive] Executing endTurn action, clicking button');
         btnEndTurn.click(); return true;
       }
     } catch(e){ console.warn('applyActionToLive error', e); return false; }
@@ -1938,6 +2150,60 @@ document.addEventListener('DOMContentLoaded', ()=>{
     snapshot: snapshotState,
     enumerateActionsForState: enumerateActionsForState,
     applyActionToLive: applyActionToLive,
+    getPhase: () => phase, // Expose current phase
+    endTurn: function(){
+      // Called by gameStateManager or other external code
+      console.log('[GameAPI.endTurn] endTurn called, triggering button click');
+      if(btnEndTurn){
+        btnEndTurn.click();
+        return true;
+      }
+      return false;
+    },
+    startGame: function(){
+      // Start the game after pieces are placed (when both players finished setup)
+      console.log('[GameAPI.startGame] ===== START GAME CALLED =====');
+      console.log('[GameAPI.startGame] phase=' + phase);
+      console.log('[GameAPI.startGame] typeof phase:', typeof phase);
+      console.log('[GameAPI.startGame] phase === "setup":', phase === 'setup');
+      
+      if(phase === 'setup'){
+        console.log('[GameAPI.startGame] ===== ENTERING SETUP COMPLETION =====');
+        console.log('[GameAPI.startGame] Changing phase to inprogress');
+        phase = 'inprogress'; 
+        console.log('[GameAPI.startGame] Phase changed to:', phase);
+        
+        console.log('[GameAPI.startGame] Calling computePools()');
+        computePools(); 
+        console.log('[GameAPI.startGame] computePools() completed');
+        
+        console.log('[GameAPI.startGame] Calling placeDragon()');
+        placeDragon(); 
+        console.log('[GameAPI.startGame] placeDragon() completed');
+        
+        currentStepIndex = 0; 
+        currentActor = cycle[currentStepIndex];
+        console.log('[GameAPI.startGame] Set currentActor to:', currentActor?.name || 'unknown');
+        
+        // Initialize pause state based on who's going first
+        const isFirstActorAI = (currentActor === 'ally') ? window.gameConfig.p1IsAI : window.gameConfig.p2IsAI;
+        if(!isFirstActorAI) {
+          window.pauseAIExecution(true); // Pause AI if human is first
+        } else {
+          window.pauseAIExecution(false); // Resume AI if AI is first
+        }
+        
+        console.log('[GameAPI.startGame] Calling render()');
+        render(); 
+        console.log('[GameAPI.startGame] render() completed');
+        
+        log('Setup complete. Game begins! Player 1 (ally) goes first.');
+        console.log('[GameAPI.startGame] Returning TRUE');
+        return true;
+      }
+      console.log('[GameAPI.startGame] Phase is not setup (phase=' + phase + '), returning FALSE');
+      return false;
+    },
     // Choose a revival option (index into removedChampions[playerKey])
     chooseRevival: function(playerKey, championIndex){
       try{
@@ -1961,6 +2227,29 @@ document.addEventListener('DOMContentLoaded', ()=>{
     }
   };
 
-  window.__av2 = {pieces,grid,player,render};
-});
+  window.__av2 = {
+    pieces,
+    grid,
+    player,
+    render,
+    getSetupPlaced: () => setupPlaced  // Use a getter to always get current setupPlaced
+  };
+  console.log('[app.js init] window.GameAPI created:', typeof window.GameAPI);
+  console.log('[app.js init] window.__av2 created:', typeof window.__av2);
+  console.log('[app.js init] initializeGame completed successfully');
+    } catch(e) {
+      console.error('[app.js] CRITICAL ERROR in initializeGame:', e);
+      console.error('[app.js] Stack:', e.stack);
+    }
+  }
+
+  // Auto-initialize when DOM is ready
+  console.log('[app.js BOTTOM] document.readyState:', document.readyState);
+  
+  // Since this script is at the end of the HTML (before </body>), the DOM is definitely ready
+  // We can call initializeGame() immediately instead of waiting for DOMContentLoaded
+  // This ensures GameAPI is available when other modules (like aiManager) try to use it
+  
+  console.log('[app.js BOTTOM] Calling initializeGame() immediately (script at end of HTML)');
+  initializeGame();
 })();
